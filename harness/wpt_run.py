@@ -25,6 +25,7 @@ def init_worker(engine, wpt_root, work_root, evidence_dir):
     _G["wpt"] = wpt_root
     _G["work"] = os.path.join(work_root, f"w{os.getpid()}")
     _G["evidence"] = evidence_dir
+    _G["aa"] = os.environ.get("WPT_PDF_AA", "0") == "1"
     _G["cache"] = {}
     common.clean_dir(_G["work"])
 
@@ -49,7 +50,7 @@ def render_pages(rel_path, mode):
     if r["status"] == "OK":
         try:
             if is_pdf:
-                res["pages"] = common.rasterize(out, os.path.join(_G["work"], h + "_px"))
+                res["pages"] = common.rasterize(out, os.path.join(_G["work"], h + "_px"), antialias=_G["aa"])
             else:
                 res["pages"] = [out]
         except Exception as e:  # noqa: BLE001

@@ -75,10 +75,11 @@ def run_adapter(info, input_path, out_path, w, h, margin, timeout, geometry=None
     }
 
 
-def rasterize(pdf_path, out_dir, dpi=96):
+def rasterize(pdf_path, out_dir, dpi=96, antialias=True):
     os.makedirs(out_dir, exist_ok=True)
     prefix = os.path.join(out_dir, "p")
-    r = subprocess.run(["pdftoppm", "-r", str(dpi), "-png", pdf_path, prefix],
+    aa = [] if antialias else ["-aa", "no", "-aaVector", "no"]
+    r = subprocess.run(["pdftoppm", "-r", str(dpi), *aa, "-png", pdf_path, prefix],
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
     if r.returncode != 0:
         raise RuntimeError("pdftoppm failed: " + r.stderr.decode("utf-8", "replace")[-500:])
