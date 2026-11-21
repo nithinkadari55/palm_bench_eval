@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: core-bakeoff-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   WPT_SHA: 9986bb32c9e97707eff870ab284ebc5cc7ae8d21
   CARGO_TERM_COLOR: always

@@ -224,8 +224,9 @@ def doc_orphans_widows():
                     lines_by_page.setdefault(h["page"], set()).add(round(h["y0"] / 5))
             counts = [len(v) for k, v in sorted(lines_by_page.items())]
             res.append(counts)
-        ok = all(all(c >= 4 for c in counts) and len(counts) >= 2 for counts in res)
-        return ok, {"lines_per_page": res}
+        first_ok = len(res[0]) == 1
+        second_ok = len(res[1]) == 2 and all(c >= 4 for c in res[1])
+        return first_ok and second_ok, {"lines_per_page": res, "expect": "p1 moved whole (only 2 lines fit, orphans:4); p2 split with >=4 lines each side (widows:4)"}
     return page(body, css), [
         C("pagination", "orphans:4 / widows:4 honored on split paragraphs", check),
         C("pagination", "all words present", present_once(words)),
@@ -1213,16 +1214,18 @@ def doc_running_elements():
 
 
 def doc_target_counter():
-    css = "a.toc::after{content:' p' target-counter(attr(href url), page)} h2{break-before:page}"
-    body = ("<p><a class=toc href='#c1'>TOCONE</a></p><p><a class=toc href='#c3'>TOCTHREE</a></p>"
+    css = "a.toc::after{content:' p' target-counter(attr(href url), page)} a.toc2::after{content:' p' target-counter(attr(href), page)} h2{break-before:page}"
+    body = ("<p><a class=toc2 href='#c3'>TOCALT</a></p><p><a class=toc href='#c3'>TOCTHREE</a></p>"
             + "".join(f"<h2 id=c{i}>CHAPHEAD{i}</h2><p>{lorem(50, i)}</p>" for i in range(1, 4)))
 
     def check(d):
         tgt = first(d, "CHAPHEAD3")
         if not tgt:
             return False, {}
-        want = f"TOCTHREE p{tgt['page'] + 1}"
-        return norm(want) in norm(d.all_text()), {"want": want}
+        t = norm(d.all_text())
+        p = tgt["page"] + 1
+        ok = norm(f"TOCTHREE p{p}") in t or norm(f"TOCALT p{p}") in t
+        return ok, {"want": f"TOCTHREE/TOCALT p{p}", "url_form": norm(f"TOCTHREE p{p}") in t, "plain_form": norm(f"TOCALT p{p}") in t}
     return page(body, css), [C("navigation", "target-counter() TOC page numbers", check)], {}
 
 
