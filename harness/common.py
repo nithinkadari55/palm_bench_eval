@@ -21,6 +21,10 @@ def engine_info(engine):
 
 
 def run_adapter(info, input_path, out_path, w, h, margin, timeout, geometry=None, diagnostics=None):
+    input_path = os.path.abspath(input_path)
+    out_path = os.path.abspath(out_path)
+    geometry = os.path.abspath(geometry) if geometry else None
+    diagnostics = os.path.abspath(diagnostics) if diagnostics else None
     cmd = [info["bin"], "render", input_path, out_path,
            "--page-width-px", str(w), "--page-height-px", str(h), "--margin-px", str(margin)]
     if geometry:
