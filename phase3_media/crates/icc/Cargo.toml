@@ -1,0 +1,16 @@
+[package]
+name = "p3-icc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "icc"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# moxcms: the CMS raikiri uses (raikiri-traits image.rs:178-233). BSD-3-Clause OR Apache-2.0.
+moxcms = "=0.8.1"
+# qcms: Firefox's CMS. MIT.
+qcms = "=0.3.0"

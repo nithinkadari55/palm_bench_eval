@@ -1,0 +1,76 @@
+# Phase 3: images, colour, SVG
+
+Measures the image, colour and SVG building blocks of the browser-free HTML->PDF engine (raikiri via fulgur-raikiri, krilla as PDF writer) against standard corpora and independent oracles. Every test writes `results/<test>.json` with `pass`, `fail`, `total`, `pass_rate`, `pass_criterion` and up to 20 `first_failures` with details. `.github/workflows/phase3-media.yml` runs everything on GitHub Actions (ubuntu-24.04), one matrix job per group, each test as its own `continue-on-error` step. Results are uploaded with `if: always()`. A summary job writes markdown tables to the run's step summary and uploads `phase3-results-all`.
+
+## Stack versions under test (from source)
+
+| component | version | where it comes from |
+|---|---|---|
+| raikiri | `a570d903` (engines/raikiri/ENGINE.json) | git dependency; 0.0.7 is not on crates.io |
+| image | 0.25.10, features gif/jpeg/png/webp | raikiri Cargo.toml:113, Cargo.lock |
+| zune-jpeg / png / gif / image-webp | 0.5.15 / 0.18.1 / 0.14.2 / 0.2.4 | raikiri Cargo.lock |
+| moxcms | 0.8.1 | raikiri Cargo.toml:116 (raikiri-traits image.rs:178-233) |
+| resvg / usvg | 0.48.1 (raikiri) and 0.45.1 (krilla-svg 0.7.0) | raikiri Cargo.toml:126-127; fulgur Cargo.lock |
+| krilla / krilla-svg | 0.7.0 / 0.7.0 | fulgur `bd6222fe` crates/fulgur-raikiri/Cargo.toml, Cargo.lock |
+
+## Layout
+
+| path | content |
+|---|---|
+| `crates/p3common` | shared library: P3R1 raw pixel format, child-process batch runner (one process per case, timeout, exit-status classification) |
+| `crates/raster` | `raster`: image 0.25.10 decode (`decode`, `frames` for animations) |
+| `crates/rkpipe` | `rkpipe`: the exact raikiri image path, raikiri-net `ImageResolver<FileNetworkProvider>` at a570d903 (`decode`), and image's EXIF tag read (`orient`) |
+| `crates/avif_native` | image 0.25.10 `avif-native` (mp4parse + dav1d -> system libdav1d) |
+| `crates/avif_pure` | avif-decode 3.0.0 (avif-parse + rav1d, pure Rust) |
+| `crates/avif_zen` | zenavif 0.1.6 (rav1d-safe, pure Rust, AGPL-3.0 or commercial) |
+| `crates/icc` | moxcms 0.8.1 and qcms 0.3.0 transforms of raw device values |
+| `crates/csscolor_raikiri` | raikiri-style's `<color>` parser driven through its public cascade |
+| `crates/csscolor_libs` | `color` 0.3.3, csscolorparser 0.9.2, cssparser-color 0.6.0 |
+| `crates/pdfimg` | krilla 0.7.0: native image embedding and the fulgur-raikiri `from_custom` path |
+| `crates/svgpdf` | usvg 0.45.1 -> krilla-svg 0.7.0 -> krilla 0.7.0 |
+| `scripts/` | Python drivers and oracles; `scripts/css/` the colorjs.io oracle (Node) |
+| `SOURCES.md` | every corpus and tool with URL, pin and licence |
+
+The crates are independent packages (no workspace), so one failing build does not block the other tests, and conflicting pins (krilla-svg's usvg 0.45 vs raikiri's 0.48, cssparser 0.37 vs 0.38) never share a lockfile. All crates.io versions are pinned with `=`. Git dependencies are pinned by `rev`. No `Cargo.lock` is committed (no local toolchain). CI uploads each generated lockfile as the `phase3-cargo-lock-<group>` artifact.
+
+## Tests and pass criteria
+
+Colour differences are CIEDE2000. Image tests use sRGB -> CIE Lab with a D65 white (`scripts/common.py`, checked against the Sharma et al. test pairs). CSS tests use colorjs.io `deltaE2000` (Lab D50).
+
+### 1. Raster decoders: group `raster`, `avif`, `robustness`
+- **PNG** (`raster_png`): the 161 valid PngSuite files plus the logo, decoded by image. Oracle: pypng raw samples. pypng is an independent pure-Python decoder; sBIT and gAMA are not applied by it or by image. Pass: same size, every channel within 1/255 on the 8-bit scale (16-bit images compared exactly after normalisation). Colour is ignored where both alphas are 0.
+- **JPEG** (`raster_jpeg`): libjpeg-turbo 3.2.1 `testimages/*.jpg`, plus 18 `cjpeg` variants of each libjpeg-turbo test source: 4:2:0/4:2:2/4:4:0/4:1:1/4:4:4, gray, progressive, optimised, restart intervals, arithmetic, float/fast DCT, RGB JPEG, smoothing, q10-q100. Oracle: `djpeg` defaults (islow, fancy upsampling). Pass: mean |diff| <= 1.0 and <= 1% of pixels with any channel |diff| > 3. Files djpeg cannot decode (12-bit) are listed under `no_oracle`.
+- **WebP** (`raster_webp`): all 131 libwebp-test-data files, plus animated WebP made with `gif2webp` (lossless and lossy) from the GIF suites, because the corpus has no animated file. Oracles: `dwebp` (PAM) for stills, Pillow's libwebp WebPAnimDecoder for animations. Pass: lossless within 1/255; lossy, lossy+alpha and animated use the JPEG tolerance. Animations also need the same frame count. A file that dwebp rejects must also be rejected.
+- **GIF** (`raster_gif`): the 84-test GIF suite (pygif). Composited RGBA frames must equal the expected `.rgba` frames within 1/255, frame count included. The 9 zero-frame tests must be rejected or yield no frames. image-gif samples are compared with Pillow's composited frames. Frames are capped at 300.
+- **AVIF** (`avif_<candidate>`, `avif_candidates`): link-u/avif-sample-images (all .avif/.avifs) and AOMedia av1-avif testFiles (Microsoft, Apple, Netflix avif+avis, Xiph). Oracle: `avifdec -d 8` (libavif 1.0.4). Pass: same size, mean |diff| <= 1.0 and <= 1% of pixels > 3 on the 8-bit scale. `per_tag` gives pass counts for 8/10/12-bit, alpha, monochrome, grid, HDR PQ, animated (first frame), multilayer, odd sizes, transforms (irot/imir/clap) and yuv420/422/444. `avif_candidates.json` records build outcome, licence, pure-Rust status and results for each candidate.
+- **Robustness** (`robustness`): PngSuite `x*` files, plus about 40 deterministic mutations per seed file (truncations, single bit flips, header bit flips, byte bursts) and random data with each format's magic, for PNG/JPEG/GIF/WebP/AVIF seeds. Decoders: image, the raikiri pipeline, krilla's own embedding (`pdfimg native`) and the three AVIF candidates. Each case runs in its own child process with a 20 s timeout under `ulimit -v 6000000`. Pass (safety): `ok` or `Err`; panics, aborts, signals, timeouts and other exits fail. `strict_err_rate` per decoder is the share of must-fail inputs (x*, truncations, garbage) that returned `Err`. Partial decodes are counted, not failed. Expected deviation: raikiri rewrites PNG chunk CRCs before decoding (raikiri-traits image.rs:270, browser behaviour), so `xcsn0g01`/`xhdn0g08` may decode there.
+
+### 2. CMYK / YCCK JPEG: group `color-images` (`cmyk_jpeg`)
+Ten public Adobe CMYK (transform 0) and YCCK (transform 2) JPEGs, including a progressive YCCK, one with an embedded CMYK profile, and an APP14-stripped copy of every transform-0 file as the non-inverted case (no public sample exists). Decoded by image and by the raikiri pipeline. Oracles from Pillow's libjpeg samples: a naive conversion `(255-C)(255-K)/255` and LittleCMS with the embedded profile (or FOGRA39 from colord-data). The primary oracle is the ICC one when the file embeds a CMYK profile, otherwise the naive one. Without APP14, the oracle uses the plain (non-inverted) reading, `255 - Pillow`, because Pillow always assumes Adobe inversion. Pass: mean deltaE2000 <= 2.0 and p95 <= 5.0 against the primary oracle. deltaE against the other oracle and against the opposite inversion are reported.
+
+### 3. EXIF orientation: group `color-images` (`exif_orientation`)
+recurser/exif-orientation-examples (Landscape/Portrait _0.._8). raikiri reads the tag with image's `ImageDecoder::orientation()` and applies `DynamicImage::apply_orientation()` (raikiri-net image_decoder.rs:44,56). kamadak-exif is not in the stack. Also: PNG (eXIf) and WebP (EXIF) files generated from the upright image for tags 1-8. Pass: the tag image reads equals the file's tag (`_0` files carry the invalid value 0, read as 0 or 1), and the oriented pixels have the upright size. JPEG pixels: mean |diff| <= 2.0 vs Pillow `exif_transpose`. Generated lossless files: within 1/255 of the upright source.
+
+### 4. ICC colour management: group `color-images` (`icc_moxcms`, `icc_qcms`, `icc_raikiri`)
+Profiles: all 44 Compact-ICC-Profiles (v2 and v4: Adobe RGB compatible, Display P3, DCI-P3, ProPhoto, Rec.2020, Rec.709/601, WideGamut, sRGB, sGrey, a CMYK profile), the libjpeg-turbo LittleCMS test profiles, and every display/input/output RGB/GRAY/CMYK profile from colord-data and icc-profiles-free. Inputs: a 17^3 RGB grid and a photo (RGB), a 256-step ramp and the photo's luminance (gray), and a 9^4 grid (CMYK). moxcms and qcms convert the same 8-bit device values to sRGB, relative colorimetric. moxcms falls back to perceptual, then saturation, as raikiri does. Oracle: LittleCMS via Pillow ImageCms, relative colorimetric, built-in sRGB output, no BPC. Pass: mean deltaE2000 <= 1.0 and p95 <= 2.0. `icc_raikiri` embeds each RGB/gray profile in PNG (iCCP), JPEG (APP2) and WebP (ICCP), and adds Pillow's real Adobe RGB JPEG. These go through raikiri-net, which converts RGB profiles only (8-bit, after `into_rgba8`). Same pass rule against LittleCMS on the stored pixels.
+
+### 5. CSS Color 4/5: group `css` (`css_color_raikiri`, `css_color_color`, `css_color_csscolorparser`, `css_color_cssparser-color`, `css_oracle_selfcheck`)
+- raikiri does not use the linebender `color` crate for CSS. raikiri-style has its own `<color>` parser on cssparser 0.37 (crates/raikiri-style/src/property/parse/color.rs). `color` 0.3.3 is in raikiri's lockfile only through peniko/anyrender. The raikiri candidate drives that parser through the public cascade (`build_rule_tree` + `cascade` on a minimal `StyleDom`). It reads `background-color` declared after a sentinel, so a value counts as invalid when the sentinel survives under two different sentinels. currentcolor is `rgb(10 20 30)`.
+- Inputs: about 400 hand-written values of the kinds LLMs write: hex, rgb/rgba legacy and modern, hsl/hwb with angle units, lab/lch/oklab/oklch, color() in every predefined space, color-mix() with every space and hue method, relative colour syntax with calc(), `none`, named colours, currentcolor, the 42 CSS system colours, light-dark(), and invalid forms. Added to these are about 3,270 literal values from WPT css/css-color/parsing (computed, valid and invalid cases; template literals with `${}` and var() are skipped).
+- Oracle: colorjs.io 0.7.1. It cannot parse color-mix() or relative colours, so those are evaluated in `css_oracle.mjs` per CSS Color 5 with colorjs conversions: percentage normalisation, missing and powerless components, hue fix-up, premultiplied interpolation. When WPT gives an expected computed value, that value, converted by colorjs, is the reference. `css_oracle_selfcheck` reports how often the colorjs evaluation of the input agrees with it. Results go to sRGB per CSS Color 4: legacy sRGB syntax clips, everything else uses colorjs `toGamut({method: "css"})`.
+- Pass: invalid inputs are rejected. Valid inputs are accepted and, where an oracle colour exists, have deltaE2000 <= 1.0 and |alpha diff| <= 0.01. Float candidates are clipped to [0, 1] as a renderer would. cssparser-color only parses, so its re-serialised value is converted by colorjs. System colours and light-dark() have no oracle colour and are checked for acceptance only.
+
+### 6. SVG: groups `svg-resvg`, `svg-pdf`
+- `svg_resvg_0.48.1` and `svg_resvg_0.45.1`: `cargo test --release --locked -p resvg --test integration --no-fail-fast` in resvg checkouts at both tags (SHA-verified), with the repository's own rule. v0.45.1: any RGBA channel |diff| > 1 after un-premultiplying is a differing pixel, and 0 differing pixels pass (main.rs:73-89, 242-247). v0.48.1: the same threshold, with pixels transparent in both images ignored (main.rs:136, 151-226). `per_category` covers filters, masking, paint-servers (gradients and patterns), painting, shapes, structure, text and extra.
+- `svg_krilla_pdf_strict` / `svg_krilla_pdf_relaxed`: every test in v0.45.1's render.rs goes through usvg 0.45.1 (fonts and Options as in the resvg harness) -> krilla-svg 0.7.0 `draw_svg` (SvgSettings::default) -> PDF of the reference PNG's size. Strict: `pdftocairo -png -transp` at that size, with resvg v0.45.1's rule against the reference. Relaxed: `pdftoppm` with the reference composited on white; at most 1% of pixels may have a channel |diff| > 16. Per-category tables as above.
+
+### 7. Images in PDF via krilla: group `pdf-images` (`pdf_images`, `pdf_images_structure`)
+31 images: PNG 8/16-bit gray, RGB, palette, gray+alpha, RGBA, tRNS and interlaced; JPEG baseline, progressive, gray, 4:4:4, arithmetic, 12-bit, Adobe CMYK, YCCK and non-inverted CMYK; WebP lossy, lossless and both with alpha; GIF. Two paths: krilla native (`Image::from_png/jpeg/gif/webp`), and the fulgur-raikiri path (raikiri RGBA8 -> `Image::from_custom`, fulgur-raikiri paint/raster.rs:29-91). Each image is drawn on a W x H pt page and rasterised with `pdftoppm -r 72`. Pixel pass: mean |diff| <= 2.0 and <= 1% of pixels > 16 vs the reference decode (pypng / Pillow) on white. CMYK uses mean deltaE2000 <= 5 vs the naive Adobe-inverted conversion, because rasteriser DeviceCMYK conversions differ. Structure pass (pypdf): native JPEG is `/DCTDecode` with a stream byte-identical to the file; CMYK JPEG has `/Decode [1 0 ...]` exactly when the file is Adobe-inverted; images with any alpha < 1 get an `/SMask`; native 16-bit PNG keeps BitsPerComponent 16. PDF/source size ratios are recorded. An SMask on an opaque image and the fulgur path re-encoding JPEGs as Flate are reported, not gated.
+
+## Running locally (Linux)
+```
+pip install -r phase3_media/requirements.txt
+python3 phase3_media/scripts/fetch_corpus.py --data phase3_media/data pngsuite libjpeg-turbo ...
+cargo build --release --manifest-path phase3_media/crates/<crate>/Cargo.toml
+```
+Then follow the step order in the workflow. The scripts take every binary path and directory as an argument.

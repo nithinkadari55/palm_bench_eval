@@ -1,0 +1,20 @@
+[package]
+name = "p3-csscolor-libs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "csscolor_libs"
+path = "src/main.rs"
+
+[dependencies]
+# linebender `color` (Apache-2.0 OR MIT): the version in raikiri's Cargo.lock (via peniko / anyrender),
+# not used by raikiri-style itself.
+color = "=0.3.3"
+# csscolorparser (MIT OR Apache-2.0)
+csscolorparser = "=0.9.2"
+# cssparser-color (MPL-2.0): Servo's parse-only <color> grammar; requires cssparser ^0.38.
+cssparser-color = "=0.6.0"
+cssparser = "=0.38.0"
+serde_json = "=1.0.154"

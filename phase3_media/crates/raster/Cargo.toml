@@ -1,0 +1,20 @@
+[package]
+name = "p3-raster"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "raster"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# Same version and feature set as raikiri a570d903 (Cargo.toml:113, Cargo.lock image 0.25.10).
+image = { version = "=0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+# Decoder versions from raikiri's Cargo.lock at a570d903 (no lockfile is committed here).
+zune-jpeg = "=0.5.15"
+png = "=0.18.1"
+gif = "=0.14.2"
+image-webp = "=0.2.4"
+moxcms = "=0.8.1"

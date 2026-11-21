@@ -1,0 +1,17 @@
+[package]
+name = "p3-svgpdf"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "svgpdf"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# usvg -> krilla-svg -> krilla, the versions fulgur bd6222fe resolves (Cargo.lock: krilla 0.7.0,
+# krilla-svg 0.7.0 -> usvg 0.45.1 / resvg 0.45.1 / fontdb 0.23.0).
+krilla = { version = "=0.7.0", default-features = false, features = ["raster-images"] }
+krilla-svg = "=0.7.0"
+usvg = "=0.45.1"

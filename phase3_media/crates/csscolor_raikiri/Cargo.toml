@@ -1,0 +1,15 @@
+[package]
+name = "p3-csscolor-raikiri"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "csscolor_raikiri"
+path = "src/main.rs"
+
+# raikiri's own <color> parser (crates/raikiri-style/src/property/parse/color.rs) driven through
+# its public cascade, at the commit pinned by engines/raikiri/ENGINE.json.
+[dependencies]
+raikiri-style = { git = "https://github.com/fulgur-rs/raikiri", rev = "a570d9031237fb18cf015592960adeda906bff30" }
+serde_json = "=1.0.154"

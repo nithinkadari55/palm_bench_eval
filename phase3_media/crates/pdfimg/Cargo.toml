@@ -1,0 +1,14 @@
+[package]
+name = "p3-pdfimg"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "pdfimg"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# The krilla version fulgur-raikiri pins (fulgur bd6222fe crates/fulgur-raikiri/Cargo.toml, Cargo.lock 0.7.0).
+krilla = { version = "=0.7.0", default-features = false, features = ["raster-images"] }

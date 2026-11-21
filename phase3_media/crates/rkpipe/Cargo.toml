@@ -1,0 +1,24 @@
+[package]
+name = "p3-rkpipe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "rkpipe"
+path = "src/main.rs"
+
+# The exact raikiri image path: raikiri-net ImageResolver<FileNetworkProvider> at the
+# commit pinned by engines/raikiri/ENGINE.json. raikiri 0.0.7 is not on crates.io.
+[dependencies]
+p3common = { path = "../p3common" }
+raikiri-net = { git = "https://github.com/fulgur-rs/raikiri", rev = "a570d9031237fb18cf015592960adeda906bff30" }
+raikiri-traits = { git = "https://github.com/fulgur-rs/raikiri", rev = "a570d9031237fb18cf015592960adeda906bff30" }
+url = "2.5"
+# Pins that reproduce raikiri's Cargo.lock at a570d903 (no lockfile is committed here).
+image = { version = "=0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+moxcms = "=0.8.1"
+zune-jpeg = "=0.5.15"
+png = "=0.18.1"
+gif = "=0.14.2"
+image-webp = "=0.2.4"

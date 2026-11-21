@@ -1,0 +1,14 @@
+[package]
+name = "p3-avif-native"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "avif_native"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# image's AVIF decoder: mp4parse 0.17 (MPL-2.0) + dav1d 0.11 -> dav1d-sys 0.8 -> system libdav1d >= 1.3.0 (BSD-2-Clause, C).
+image = { version = "=0.25.10", default-features = false, features = ["avif-native"] }

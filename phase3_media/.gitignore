@@ -1,0 +1,8 @@
+target/
+data/
+work/
+results/
+locks/
+scripts/css/node_modules/
+scripts/css/package-lock.json
+__pycache__/

@@ -1,0 +1,349 @@
+name: phase3-media
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "phase3_media/**"
+      - ".github/workflows/phase3-media.yml"
+
+concurrency:
+  group: phase3-media-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  P3: phase3_media
+  RESVG_045_SHA: 1b6c2fddbcbeffa8135df4323b02aaae84890907
+  RESVG_048_SHA: 68b14c4c3bccdb60344c777406486b54c36ec1a4
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [raster, avif, robustness, color-images, css, svg-resvg, svg-pdf, pdf-images]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/phase3_media/target
+      BIN: ${{ github.workspace }}/phase3_media/target/release
+      DATA: ${{ github.workspace }}/phase3_media/data
+      WORK: ${{ github.workspace }}/phase3_media/work
+      RES: ${{ github.workspace }}/phase3_media/results
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+          mkdir -p "$RES" "$DATA" "$WORK" "$P3/locks"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            phase3_media/target
+          key: p3-${{ matrix.group }}-${{ hashFiles('phase3_media/crates/**/Cargo.toml') }}
+          restore-keys: |
+            p3-${{ matrix.group }}-
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update -qq
+          case "${{ matrix.group }}" in
+            raster)       sudo apt-get install -y -qq libjpeg-turbo-progs webp ;;
+            avif)         sudo apt-get install -y -qq libdav1d-dev nasm pkg-config libavif-bin ;;
+            robustness)   sudo apt-get install -y -qq libdav1d-dev nasm pkg-config ;;
+            color-images) sudo apt-get install -y -qq colord-data icc-profiles-free ;;
+            svg-pdf)      sudo apt-get install -y -qq poppler-utils ;;
+            pdf-images)   sudo apt-get install -y -qq poppler-utils ;;
+          esac
+          dpkg-query -W -f='${Package} ${Version}\n' libjpeg-turbo-progs webp libdav1d-dev libavif-bin nasm colord-data icc-profiles-free poppler-utils 2>/dev/null > "$RES/apt-packages-${{ matrix.group }}.txt" || true
+
+      - name: Install Python packages
+        run: python -m pip install --quiet -r "$P3/requirements.txt"
+
+      - name: Fetch corpora
+        run: |
+          case "${{ matrix.group }}" in
+            raster)       C="pngsuite libjpeg-turbo libwebp-test-data pygif image-gif" ;;
+            avif)         C="avif-link-u av1-avif" ;;
+            robustness)   C="pngsuite libjpeg-turbo libwebp-test-data pygif image-gif avif-link-u av1-avif exif-orientation cmyk-jpeg" ;;
+            color-images) C="cmyk-jpeg exif-orientation compact-icc libjpeg-turbo icc-real" ;;
+            css)          C="wpt-css-color" ;;
+            svg-pdf)      C="resvg-tests-0.45.1" ;;
+            pdf-images)   C="pngsuite libjpeg-turbo libwebp-test-data cmyk-jpeg pygif image-gif" ;;
+            *)            C="" ;;
+          esac
+          if [ -n "$C" ]; then python -I "$P3/scripts/fetch_corpus.py" --data "$DATA" $C; cp "$DATA"/corpus-*.json "$RES/" || true; fi
+
+      # ---------------- builds (each its own step so one failure does not hide the others) ----------------
+      - name: "build: raster (image 0.25.10)"
+        id: b_raster
+        if: matrix.group == 'raster' || matrix.group == 'robustness' || matrix.group == 'color-images'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/raster/Cargo.toml"
+          cp "$P3/crates/raster/Cargo.lock" "$P3/locks/raster.Cargo.lock"
+
+      - name: "build: rkpipe (raikiri-net a570d903)"
+        id: b_rkpipe
+        if: matrix.group == 'robustness' || matrix.group == 'color-images' || matrix.group == 'pdf-images'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/rkpipe/Cargo.toml"
+          cp "$P3/crates/rkpipe/Cargo.lock" "$P3/locks/rkpipe.Cargo.lock"
+
+      - name: "build: avif_native (image avif-native + libdav1d)"
+        id: b_avif_native
+        if: matrix.group == 'avif' || matrix.group == 'robustness'
+        continue-on-error: true
+        run: |
+          pkg-config --modversion dav1d
+          cargo build --release --manifest-path "$P3/crates/avif_native/Cargo.toml"
+          cp "$P3/crates/avif_native/Cargo.lock" "$P3/locks/avif_native.Cargo.lock"
+
+      - name: "build: avif_pure (avif-decode 3.0.0 / rav1d)"
+        id: b_avif_pure
+        if: matrix.group == 'avif' || matrix.group == 'robustness'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/avif_pure/Cargo.toml"
+          cp "$P3/crates/avif_pure/Cargo.lock" "$P3/locks/avif_pure.Cargo.lock"
+
+      - name: "build: avif_zen (zenavif 0.1.6, AGPL)"
+        id: b_avif_zen
+        if: matrix.group == 'avif' || matrix.group == 'robustness'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/avif_zen/Cargo.toml"
+          cp "$P3/crates/avif_zen/Cargo.lock" "$P3/locks/avif_zen.Cargo.lock"
+
+      - name: "build: pdfimg (krilla 0.7.0)"
+        id: b_pdfimg
+        if: matrix.group == 'robustness' || matrix.group == 'pdf-images'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/pdfimg/Cargo.toml"
+          cp "$P3/crates/pdfimg/Cargo.lock" "$P3/locks/pdfimg.Cargo.lock"
+
+      - name: "build: icc (moxcms 0.8.1, qcms 0.3.0)"
+        if: matrix.group == 'color-images'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/icc/Cargo.toml"
+          cp "$P3/crates/icc/Cargo.lock" "$P3/locks/icc.Cargo.lock"
+
+      - name: "build: csscolor_raikiri (raikiri-style a570d903)"
+        if: matrix.group == 'css'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/csscolor_raikiri/Cargo.toml"
+          cp "$P3/crates/csscolor_raikiri/Cargo.lock" "$P3/locks/csscolor_raikiri.Cargo.lock"
+
+      - name: "build: csscolor_libs (color, csscolorparser, cssparser-color)"
+        if: matrix.group == 'css'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/csscolor_libs/Cargo.toml"
+          cp "$P3/crates/csscolor_libs/Cargo.lock" "$P3/locks/csscolor_libs.Cargo.lock"
+
+      - name: "build: svgpdf (usvg 0.45.1 -> krilla-svg 0.7.0)"
+        if: matrix.group == 'svg-pdf'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P3/crates/svgpdf/Cargo.toml"
+          cp "$P3/crates/svgpdf/Cargo.lock" "$P3/locks/svgpdf.Cargo.lock"
+
+      # ---------------- 1. raster decoders ----------------
+      - name: "raster: PNG (PngSuite vs pypng)"
+        if: matrix.group == 'raster'
+        continue-on-error: true
+        run: python -I "$P3/scripts/raster_test.py" --format png --bin "$BIN/raster" --data "$DATA" --work "$WORK/raster" --out "$RES/raster_png.json"
+
+      - name: "raster: JPEG (libjpeg-turbo testimages + cjpeg variants vs djpeg)"
+        if: matrix.group == 'raster'
+        continue-on-error: true
+        run: python -I "$P3/scripts/raster_test.py" --format jpeg --bin "$BIN/raster" --data "$DATA" --work "$WORK/raster" --out "$RES/raster_jpeg.json"
+
+      - name: "raster: WebP (libwebp-test-data vs dwebp; animated vs Pillow)"
+        if: matrix.group == 'raster'
+        continue-on-error: true
+        run: python -I "$P3/scripts/raster_test.py" --format webp --bin "$BIN/raster" --data "$DATA" --work "$WORK/raster" --out "$RES/raster_webp.json"
+
+      - name: "raster: GIF (pygif suite expected frames; image-gif samples vs Pillow)"
+        if: matrix.group == 'raster'
+        continue-on-error: true
+        run: python -I "$P3/scripts/raster_test.py" --format gif --bin "$BIN/raster" --data "$DATA" --work "$WORK/raster" --out "$RES/raster_gif.json"
+
+      - name: "avif: candidates vs avifdec"
+        if: matrix.group == 'avif'
+        continue-on-error: true
+        run: |
+          avifdec --version || true
+          python -I "$P3/scripts/avif_test.py" --data "$DATA" --work "$WORK/avif" --results "$RES" \
+            --candidate "avif_native=$BIN/avif_native" --candidate "avif_pure=$BIN/avif_pure" --candidate "avif_zen=$BIN/avif_zen" \
+            --build "avif_native=${{ steps.b_avif_native.outcome }}" --build "avif_pure=${{ steps.b_avif_pure.outcome }}" \
+            --build "avif_zen=${{ steps.b_avif_zen.outcome }}"
+
+      - name: "robustness: corrupt inputs in child processes (ulimit -v 6 GB, 20 s timeout)"
+        if: matrix.group == 'robustness'
+        continue-on-error: true
+        run: |
+          ulimit -v 6000000
+          python -I "$P3/scripts/robust_test.py" --data "$DATA" --work "$WORK/robust" --out "$RES/robustness.json" \
+            --decoder "image=$BIN/raster=decode=png,jpeg,gif,webp" \
+            --decoder "raikiri=$BIN/rkpipe=decode=png,jpeg,gif,webp" \
+            --decoder "krilla=$BIN/pdfimg=native=png,jpeg,gif,webp" \
+            --decoder "avif_native=$BIN/avif_native=decode=avif" \
+            --decoder "avif_pure=$BIN/avif_pure=decode=avif" \
+            --decoder "avif_zen=$BIN/avif_zen=decode=avif"
+
+      # ---------------- 2-4. CMYK, EXIF, ICC ----------------
+      - name: "cmyk: Adobe CMYK / YCCK / non-inverted vs Pillow + LittleCMS"
+        if: matrix.group == 'color-images'
+        continue-on-error: true
+        run: |
+          python -I "$P3/scripts/cmyk_test.py" --data "$DATA" --work "$WORK/cmyk" --out "$RES/cmyk_jpeg.json" \
+            --raster "$BIN/raster" --rkpipe "$BIN/rkpipe" --default-cmyk-icc /usr/share/color/icc/colord/FOGRA39L_coated.icc
+
+      - name: "exif: orientation 1-8 through the raikiri image path"
+        if: matrix.group == 'color-images'
+        continue-on-error: true
+        run: python -I "$P3/scripts/exif_test.py" --data "$DATA" --work "$WORK/exif" --out "$RES/exif_orientation.json" --rkpipe "$BIN/rkpipe"
+
+      - name: "icc: moxcms / qcms vs LittleCMS, and raikiri embedded-profile path"
+        if: matrix.group == 'color-images'
+        continue-on-error: true
+        run: |
+          python -I "$P3/scripts/icc_test.py" --data "$DATA" --work "$WORK/icc" --results "$RES" \
+            --icc "$BIN/icc" --rkpipe "$BIN/rkpipe" \
+            --profile-dir /usr/share/color/icc/colord --profile-dir /usr/share/color/icc
+
+      # ---------------- 5. CSS colour ----------------
+      - uses: actions/setup-node@v4
+        if: matrix.group == 'css'
+        with:
+          node-version: "22"
+
+      - name: "css: install colorjs.io 0.7.1"
+        if: matrix.group == 'css'
+        run: |
+          cd "$P3/scripts/css"
+          npm install --no-audit --no-fund
+          npm ls colorjs.io | tee "$RES/colorjs-version.txt"
+
+      - name: "css: build inputs (hand-written + WPT css-color parsing)"
+        if: matrix.group == 'css'
+        continue-on-error: true
+        run: |
+          python -I "$P3/scripts/css_inputs.py" --wpt "$DATA/wpt-css-color/css/css-color/parsing" \
+            --keywords "$P3/scripts/css/node_modules/colorjs.io/src/keywords.js" --out "$WORK/css_inputs.json"
+
+      - name: "css: run raikiri-style and the library candidates"
+        if: matrix.group == 'css'
+        continue-on-error: true
+        run: |
+          mkdir -p "$WORK"
+          if [ -x "$BIN/csscolor_raikiri" ]; then "$BIN/csscolor_raikiri" "$WORK/css_inputs.json" "$WORK/css_raikiri.json"; else echo '{"results": []}' > "$WORK/css_raikiri.json"; fi
+          if [ -x "$BIN/csscolor_libs" ]; then "$BIN/csscolor_libs" "$WORK/css_inputs.json" "$WORK/css_libs.json"; else echo '{"candidates": {}}' > "$WORK/css_libs.json"; fi
+
+      - name: "css: colorjs.io oracle and scoring"
+        if: matrix.group == 'css'
+        continue-on-error: true
+        run: node "$P3/scripts/css/css_oracle.mjs" "$WORK/css_inputs.json" "$WORK/css_raikiri.json" "$WORK/css_libs.json" "$RES"
+
+      # ---------------- 6. SVG ----------------
+      - name: "svg-resvg: resvg v0.48.1 integration suite (raikiri's resvg)"
+        if: matrix.group == 'svg-resvg'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$WORK/resvg-0.48.1"
+          git -C "$WORK/resvg-0.48.1" remote add origin https://github.com/linebender/resvg.git
+          git -C "$WORK/resvg-0.48.1" fetch -q --depth 1 origin "$RESVG_048_SHA"
+          git -C "$WORK/resvg-0.48.1" checkout -q FETCH_HEAD
+          python -I "$P3/scripts/svg_suite.py" --repo "$WORK/resvg-0.48.1" --tag v0.48.1 --sha "$RESVG_048_SHA" \
+            --out "$RES/svg_resvg_0.48.1.json" --log "$RES/svg_resvg_0.48.1.log"
+
+      - name: "svg-resvg: resvg v0.45.1 integration suite (krilla-svg 0.7.0's resvg)"
+        if: matrix.group == 'svg-resvg'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$WORK/resvg-0.45.1"
+          git -C "$WORK/resvg-0.45.1" remote add origin https://github.com/linebender/resvg.git
+          git -C "$WORK/resvg-0.45.1" fetch -q --depth 1 origin "$RESVG_045_SHA"
+          git -C "$WORK/resvg-0.45.1" checkout -q FETCH_HEAD
+          python -I "$P3/scripts/svg_suite.py" --repo "$WORK/resvg-0.45.1" --tag v0.45.1 --sha "$RESVG_045_SHA" \
+            --out "$RES/svg_resvg_0.45.1.json" --log "$RES/svg_resvg_0.45.1.log"
+
+      - name: "svg-pdf: usvg -> krilla-svg -> PDF -> poppler vs resvg v0.45.1 references"
+        if: matrix.group == 'svg-pdf'
+        continue-on-error: true
+        run: |
+          pdftocairo -v || true
+          python -I "$P3/scripts/svg_pdf.py" --tests "$DATA/resvg-tests-0.45.1/crates/resvg/tests" --svgpdf "$BIN/svgpdf" \
+            --work "$WORK/svgpdf" --results "$RES"
+
+      # ---------------- 7. images in PDF ----------------
+      - name: "pdf-images: krilla native and fulgur-raikiri paths"
+        if: matrix.group == 'pdf-images'
+        continue-on-error: true
+        run: |
+          python -I "$P3/scripts/pdfimg_test.py" --data "$DATA" --work "$WORK/pdfimg" --results "$RES" \
+            --pdfimg "$BIN/pdfimg" --rkpipe "$BIN/rkpipe"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-results-${{ matrix.group }}
+          path: |
+            phase3_media/results/
+          if-no-files-found: warn
+
+      - name: Upload Cargo.lock files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-cargo-lock-${{ matrix.group }}
+          path: phase3_media/locks/
+          if-no-files-found: ignore
+
+  summary:
+    needs: test
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase3-results-*
+          path: phase3_media/results
+          merge-multiple: true
+      - name: Write step summary
+        run: |
+          ls -la phase3_media/results || true
+          python3 -I phase3_media/scripts/summarize.py --results phase3_media/results --out "$GITHUB_STEP_SUMMARY"
+      - name: Upload combined results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-results-all
+          path: phase3_media/results/*.json
+          if-no-files-found: warn

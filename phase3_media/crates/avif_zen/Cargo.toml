@@ -1,0 +1,16 @@
+[package]
+name = "p3-avif-zen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "avif_zen"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# Pure-Rust AVIF via rav1d-safe + zenavif-parse. Licence AGPL-3.0-only OR commercial (Imazen):
+# evaluated for completeness, not usable in a closed-source product without a commercial licence.
+zenavif = { version = "=0.1.6", default-features = false }
+zenpixels = "=0.2.16"

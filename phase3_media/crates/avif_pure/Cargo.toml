@@ -1,0 +1,15 @@
+[package]
+name = "p3-avif-pure"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "avif_pure"
+path = "src/main.rs"
+
+[dependencies]
+p3common = { path = "../p3common" }
+# Pure-Rust AVIF: avif-parse 2.1.0 + rav1d 1.1.0 (Rust port of dav1d). BSD-3-Clause.
+# default-features = false drops the `binary` feature (lodepng CLI).
+avif-decode = { version = "=3.0.0", default-features = false }
