@@ -1,0 +1,314 @@
+name: phase4-pdf
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "phase4_pdf/**"
+      - ".github/workflows/phase4-pdf.yml"
+
+concurrency:
+  group: phase4-pdf-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  P4: phase4_pdf
+  COLRV1_COMMIT: f3ae03f5e9b3b8516fa151f7168159ca1a3e7515
+  COLRV1_SHA256: 0ae57fe58645638523ba35f388d93739d292539a9acb84df5700c81b1e1a28d2
+  VERAPDF_VERSION: "1.30.3"
+  VERAPDF_SHA256: b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59
+  NODE_VERSION: "22.23.4"
+  JAVA_VERSION: "21.0.13+9"
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        krilla: [k07, k08]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/phase4_pdf/target
+      BIN: ${{ github.workspace }}/phase4_pdf/target/release
+      WORK: ${{ github.workspace }}/phase4_pdf/work
+      RES: ${{ github.workspace }}/phase4_pdf/results
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+          mkdir -p "$RES" "$WORK" "$P4/locks"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            phase4_pdf/target
+          key: p4-${{ matrix.krilla }}-${{ hashFiles('phase4_pdf/crates/**/Cargo.toml') }}
+          restore-keys: |
+            p4-${{ matrix.krilla }}-
+
+      - name: Install apt packages (fonts, CMYK ICC profiles, GNU time)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core fonts-inter-variable colord-data time
+          dpkg-query -W -f='${Package} ${Version}\n' 'fonts-*' colord-data time 2>/dev/null > "$RES/apt-packages-generate-${{ matrix.krilla }}.txt" || true
+          cp /usr/share/doc/colord-data/copyright "$RES/colord-data-copyright.txt" || true
+
+      - name: Install Python packages
+        run: python -m pip install --quiet -r "$P4/requirements.txt"
+
+      - name: Fetch Noto COLRv1 emoji font (pinned commit, checksummed)
+        run: |
+          set -e
+          mkdir -p "$WORK/assets"
+          curl -fsSL --retry 5 -o "$WORK/assets/Noto-COLRv1.ttf" "https://raw.githubusercontent.com/googlefonts/noto-emoji/${COLRV1_COMMIT}/fonts/Noto-COLRv1.ttf"
+          echo "${COLRV1_SHA256}  $WORK/assets/Noto-COLRv1.ttf" | sha256sum -c -
+
+      - name: Prepare assets (font roles, synthetic images, manifest)
+        run: python -I "$P4/scripts/prepare_assets.py" --out "$WORK/assets" --colrv1 "$WORK/assets/Noto-COLRv1.ttf" --manifest "$WORK/assets/manifest.json"
+
+      - name: Build generator (krilla ${{ matrix.krilla }})
+        id: build
+        run: |
+          cargo build --release --manifest-path "$P4/crates/${{ matrix.krilla }}/Cargo.toml"
+          cp "$P4/crates/${{ matrix.krilla }}/Cargo.lock" "$P4/locks/${{ matrix.krilla }}.Cargo.lock"
+          grep -A1 '^name = "krilla"' "$P4/crates/${{ matrix.krilla }}/Cargo.lock"
+          "$BIN/gen" list
+
+      - name: Generate corpus (every fixture x every profile)
+        id: corpus
+        continue-on-error: true
+        run: |
+          "$BIN/gen" corpus --manifest "$WORK/assets/manifest.json" --out "$WORK/corpus"
+          cp "$WORK/assets/manifest.json" "$WORK/corpus/manifest.json"
+
+      - name: Generation matrix (refusals and validation errors)
+        continue-on-error: true
+        run: python -I "$P4/scripts/generation_matrix.py" --corpus "$WORK/corpus" --manifest "$WORK/assets/manifest.json" --out "$RES/generation_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Determinism (second process, different TZ / locale / cwd)
+        continue-on-error: true
+        run: |
+          mkdir -p "$WORK/rerun"
+          (cd "$WORK/rerun" && TZ=Pacific/Kiritimati LC_ALL=C.UTF-8 "$BIN/gen" corpus --manifest "$WORK/assets/manifest.json" --out "$WORK/corpus_b" 2>/dev/null)
+          python -I "$P4/scripts/determinism.py" --a "$WORK/corpus" --b "$WORK/corpus_b" --out "$RES/determinism_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Size, generation time and peak RSS
+        continue-on-error: true
+        run: python -I "$P4/scripts/perf.py" --gen "$BIN/gen" --manifest "$WORK/assets/manifest.json" --out "$RES/perf_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Font subsetting effectiveness
+        continue-on-error: true
+        run: python -I "$P4/scripts/subsetting.py" --corpus "$WORK/corpus" --manifest "$WORK/assets/manifest.json" --out "$RES/subsetting_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Robustness (each case in its own process, ulimit -v 8 GB, 240 s)
+        continue-on-error: true
+        run: python -I "$P4/scripts/robustness.py" --robust "$BIN/robust" --manifest "$WORK/assets/manifest.json" --out "$RES/robustness_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Upload corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-corpus-${{ matrix.krilla }}
+          path: phase4_pdf/work/corpus/
+          if-no-files-found: warn
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-results-generate-${{ matrix.krilla }}
+          path: phase4_pdf/results/
+          if-no-files-found: warn
+
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-cargo-lock-${{ matrix.krilla }}
+          path: phase4_pdf/locks/
+          if-no-files-found: ignore
+
+  test:
+    needs: generate
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        krilla: [k07, k08]
+        group: [verapdf, text, render, structure]
+    env:
+      WORK: ${{ github.workspace }}/phase4_pdf/work
+      RES: ${{ github.workspace }}/phase4_pdf/results
+      CORPUS: ${{ github.workspace }}/phase4_pdf/work/corpus
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download corpus
+        id: dl
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: phase4-corpus-${{ matrix.krilla }}
+          path: phase4_pdf/work/corpus
+
+      - name: Prepare
+        run: |
+          mkdir -p "$RES" "$WORK" "$P4/locks"
+          ls "$CORPUS" || true
+
+      - name: Install Python packages
+        run: python -m pip install --quiet -r "$P4/requirements.txt"
+
+      - name: Install apt packages
+        if: matrix.group == 'text' || matrix.group == 'render'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils mupdf-tools
+          dpkg-query -W -f='${Package} ${Version}\n' poppler-utils mupdf-tools libpoppler134 libmupdf-dev 2>/dev/null > "$RES/apt-packages-${{ matrix.group }}-${{ matrix.krilla }}.txt" || true
+
+      - uses: actions/setup-node@v4
+        if: matrix.group == 'text' || matrix.group == 'render'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pdfjs-dist + @napi-rs/canvas (exact versions)
+        if: matrix.group == 'text' || matrix.group == 'render'
+        run: |
+          cd "$P4/js"
+          npm install --no-audit --no-fund
+          npm ls --all --json > "$RES/npm-ls-${{ matrix.group }}-${{ matrix.krilla }}.json" || true
+          cp package-lock.json "$GITHUB_WORKSPACE/$P4/locks/package-lock-${{ matrix.group }}-${{ matrix.krilla }}.json" || true
+
+      # ---------------- 1. veraPDF ----------------
+      - uses: actions/setup-java@v4
+        if: matrix.group == 'verapdf'
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          java-package: jre
+
+      - name: "verapdf: install greenfield CLI ${{ env.VERAPDF_VERSION }} (checksummed)"
+        id: verapdf
+        if: matrix.group == 'verapdf'
+        continue-on-error: true
+        run: |
+          set -e
+          cd "$WORK"
+          curl -fsSL --retry 5 -o verapdf.zip "https://software.verapdf.org/releases/1.30/verapdf-greenfield-${VERAPDF_VERSION}-installer.zip"
+          echo "${VERAPDF_SHA256}  verapdf.zip" | sha256sum -c -
+          unzip -q verapdf.zip
+          cat > auto-install.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+            <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+            <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
+              <installpath>$WORK/verapdf</installpath>
+            </com.izforge.izpack.panels.target.TargetPanel>
+            <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+              <pack index="0" name="veraPDF GUI" selected="true"/>
+              <pack index="1" name="veraPDF CLI" selected="true"/>
+              <pack index="2" name="veraPDF Documentation" selected="false"/>
+              <pack index="3" name="veraPDF Sample Plugins" selected="false"/>
+            </com.izforge.izpack.panels.packs.PacksPanel>
+            <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+            <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          EOF
+          java -jar "verapdf-greenfield-${VERAPDF_VERSION}/verapdf-izpack-installer-${VERAPDF_VERSION}.jar" auto-install.xml
+          ls "$WORK/verapdf"
+          "$WORK/verapdf/verapdf" --version | tee "$RES/verapdf-version.txt"
+
+      - name: "verapdf: validate corpus against claimed flavours + negative controls"
+        if: matrix.group == 'verapdf' && steps.verapdf.outcome == 'success'
+        continue-on-error: true
+        run: python -I "$P4/scripts/verapdf_run.py" --corpus "$CORPUS" --verapdf "$WORK/verapdf/verapdf" --work "$WORK/vera" --out "$RES/verapdf_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      # ---------------- 2. text extraction ----------------
+      - name: "text: pdfminer.six / pdftotext / PDF.js / pypdf vs source strings"
+        if: matrix.group == 'text'
+        continue-on-error: true
+        run: python -I "$P4/scripts/extract_text.py" --corpus "$CORPUS" --js "$GITHUB_WORKSPACE/$P4/js" --out "$RES/text_extraction_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      # ---------------- 3. rendering ----------------
+      - name: "render: poppler / MuPDF / PDFium / PDF.js consensus comparison"
+        if: matrix.group == 'render'
+        continue-on-error: true
+        run: |
+          python -I "$P4/scripts/render_compare.py" --corpus "$CORPUS" --js "$GITHUB_WORKSPACE/$P4/js" --work "$WORK/render" \
+            --out "$RES/render_${{ matrix.krilla }}.json" --failures "$RES/render_failures_${{ matrix.krilla }}" --label ${{ matrix.krilla }}
+
+      # ---------------- 4 + 5. structure and navigation ----------------
+      - name: "structure: tags, alt, scope, reading order, Lang, artifacts, labels"
+        if: matrix.group == 'structure'
+        continue-on-error: true
+        run: python -I "$P4/scripts/structure_check.py" --corpus "$CORPUS" --out "$RES/structure_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: "navigation: links, outline, named destinations, labels, metadata"
+        if: matrix.group == 'structure'
+        continue-on-error: true
+        run: python -I "$P4/scripts/navigation_check.py" --corpus "$CORPUS" --out "$RES/navigation_${{ matrix.krilla }}.json" --label ${{ matrix.krilla }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-results-${{ matrix.group }}-${{ matrix.krilla }}
+          path: phase4_pdf/results/
+          if-no-files-found: warn
+
+      - name: Upload lockfiles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-locks-${{ matrix.group }}-${{ matrix.krilla }}
+          path: phase4_pdf/locks/
+          if-no-files-found: ignore
+
+  summary:
+    needs: [generate, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase4-results-*
+          path: phase4_pdf/results
+          merge-multiple: true
+      - name: Write step summary
+        run: |
+          ls -la phase4_pdf/results || true
+          python3 -I phase4_pdf/scripts/summarize.py --results phase4_pdf/results --out "$GITHUB_STEP_SUMMARY"
+      - name: Upload combined results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase4-results-all
+          path: |
+            phase4_pdf/results/*.json
+            phase4_pdf/results/*.txt
+          if-no-files-found: warn

@@ -1,0 +1,6 @@
+target/
+work/
+locks/
+results/
+js/node_modules/
+js/package-lock.json

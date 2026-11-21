@@ -1,0 +1,10 @@
+{
+  "name": "p4-pdfjs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pdfjs-dist": "6.4.299",
+    "@napi-rs/canvas": "1.0.13"
+  }
+}
