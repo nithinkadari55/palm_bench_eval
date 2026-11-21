@@ -35,7 +35,12 @@ def run_adapter(info, input_path, out_path, w, h, margin, timeout, geometry=None
     tfile.close()
     full = ["/usr/bin/time", "-o", tfile.name, "-f", "%M %e"] + cmd
     start = time.monotonic()
-    proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    def limits():
+        import resource
+        cap = 6 * 1024 ** 3
+        resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+
+    proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=limits,
                             start_new_session=True, cwd=os.path.dirname(input_path) or None)
     status = "OK"
     try:

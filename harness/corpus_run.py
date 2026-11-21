@@ -113,6 +113,7 @@ def main():
             rec["determinism"] = f"second_run_{r2['status']}"
         results.append(rec)
         print(name, rec["status"], sum(c["ok"] for c in rec["checks"]), "/", len(rec["checks"]), flush=True)
+        common.write_json(a.out, {"engine": a.engine, "partial": True, "results": results})
     common.write_json(a.out, {"engine": a.engine, "assets": {k: v for k, v in assets.items() if k != "green_data_uri"}, "results": results})
 
 

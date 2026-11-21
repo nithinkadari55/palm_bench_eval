@@ -10,7 +10,22 @@ use raikiri::{
 };
 use raikiri_net::{FileNetworkProvider, ImageResolver};
 use raikiri_style::property::BackgroundImage;
-use raikiri_traits::{ReplacedResolver, ResolverRequest};
+use raikiri_traits::{
+    IntrinsicBox, ReplacedResolver, ResolveDisposition, ResolvedIntrinsic, ResolverError, ResolverRequest,
+};
+
+struct OptionalImages<'a, R>(&'a R);
+
+impl<R: ReplacedResolver> ReplacedResolver for OptionalImages<'_, R> {
+    fn resolve(&self, request: ResolverRequest<'_>) -> Result<ResolvedIntrinsic, ResolverError> {
+        Ok(self.0.resolve(request).unwrap_or_else(|error| {
+            ResolvedIntrinsic::new(
+                IntrinsicBox::new(0.0, 0.0),
+                ResolveDisposition::Fallback { reason: error.to_string() },
+            )
+        }))
+    }
+}
 
 struct Args {
     input: PathBuf,
@@ -463,7 +478,7 @@ fn render(args: &Args) -> Result<(), String> {
         &mut uncascaded.dom,
         &cascade,
         page_box,
-        &image_resolver,
+        &OptionalImages(&image_resolver),
         Some(&base_url),
     )
     .map_err(|e| format!("layout failed: {e}"))?;
