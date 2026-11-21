@@ -1,0 +1,851 @@
+{
+ "wpt": {
+  "blitz": {
+   "total": 20854,
+   "PASS": 8943,
+   "reftests_run": 14529,
+   "reftest_pass": 8416,
+   "ns_run": 13483,
+   "ns_pass": 8133,
+   "NOT_RUN": 5798,
+   "FAIL": 6109,
+   "crash_run": 536,
+   "crash_pass": 527,
+   "pass_blank": 79,
+   "ERROR": 4
+  },
+  "fulgur": {
+   "total": 20854,
+   "FAIL": 11083,
+   "reftests_run": 14883,
+   "ns_run": 13827,
+   "ns_pass": 3571,
+   "NOT_RUN": 5435,
+   "PASS": 4324,
+   "reftest_pass": 3790,
+   "crash_run": 536,
+   "crash_pass": 534,
+   "pass_blank": 184,
+   "ERROR": 6,
+   "CRASH": 6,
+   "crashes": 7
+  },
+  "fulraikiri": {
+   "total": 20854,
+   "PASS": 7698,
+   "reftests_run": 14883,
+   "reftest_pass": 7178,
+   "ns_run": 13827,
+   "ns_pass": 6928,
+   "NOT_RUN": 5435,
+   "FAIL": 7693,
+   "crash_run": 536,
+   "crash_pass": 520,
+   "pass_blank": 128,
+   "ERROR": 28,
+   "crashes": 1
+  },
+  "ironpress": {
+   "total": 20854,
+   "FAIL": 11999,
+   "reftests_run": 14883,
+   "ns_run": 13827,
+   "ns_pass": 2607,
+   "NOT_RUN": 5435,
+   "PASS": 3347,
+   "reftest_pass": 2811,
+   "crash_run": 536,
+   "crash_pass": 536,
+   "pass_blank": 98,
+   "ERROR": 37,
+   "TIMEOUT": 22,
+   "crashes": 36,
+   "CRASH": 14
+  },
+  "raikiri": {
+   "total": 20854,
+   "PASS": 10452,
+   "reftests_run": 14529,
+   "reftest_pass": 9925,
+   "ns_run": 13483,
+   "ns_pass": 9667,
+   "NOT_RUN": 5798,
+   "FAIL": 4593,
+   "crash_run": 536,
+   "crash_pass": 527,
+   "pass_blank": 98,
+   "ERROR": 11
+  },
+  "takumi": {
+   "total": 20854,
+   "PASS": 5225,
+   "reftests_run": 14883,
+   "reftest_pass": 4710,
+   "FAIL": 10162,
+   "ns_run": 13827,
+   "ns_pass": 4462,
+   "NOT_RUN": 5435,
+   "crash_run": 536,
+   "crash_pass": 515,
+   "pass_blank": 90,
+   "ERROR": 32
+  }
+ },
+ "corpus": {
+  "categories": {
+   "fulgur": {
+    "pagination": [
+     31,
+     37
+    ],
+    "text": [
+     63,
+     70
+    ],
+    "layout": [
+     95,
+     106
+    ],
+    "pdf": [
+     85,
+     86
+    ],
+    "graphics": [
+     31,
+     36
+    ],
+    "fonts": [
+     0,
+     3
+    ],
+    "images": [
+     7,
+     14
+    ],
+    "navigation": [
+     3,
+     9
+    ],
+    "css": [
+     21,
+     34
+    ],
+    "robustness": [
+     5,
+     6
+    ],
+    "js": [
+     0,
+     4
+    ]
+   },
+   "fulraikiri": {
+    "pagination": [
+     35,
+     37
+    ],
+    "text": [
+     65,
+     69
+    ],
+    "layout": [
+     105,
+     105
+    ],
+    "pdf": [
+     83,
+     84
+    ],
+    "graphics": [
+     34,
+     36
+    ],
+    "fonts": [
+     3,
+     3
+    ],
+    "images": [
+     13,
+     14
+    ],
+    "navigation": [
+     3,
+     9
+    ],
+    "css": [
+     32,
+     34
+    ],
+    "robustness": [
+     5,
+     6
+    ],
+    "js": [
+     0,
+     4
+    ]
+   },
+   "ironpress": {
+    "pagination": [
+     34,
+     37
+    ],
+    "text": [
+     62,
+     68
+    ],
+    "layout": [
+     98,
+     104
+    ],
+    "pdf": [
+     41,
+     89
+    ],
+    "graphics": [
+     24,
+     36
+    ],
+    "fonts": [
+     1,
+     3
+    ],
+    "images": [
+     8,
+     14
+    ],
+    "navigation": [
+     4,
+     9
+    ],
+    "css": [
+     29,
+     34
+    ],
+    "robustness": [
+     4,
+     6
+    ],
+    "js": [
+     0,
+     4
+    ]
+   },
+   "takumi": {
+    "pagination": [
+     33,
+     37
+    ],
+    "text": [
+     66,
+     69
+    ],
+    "layout": [
+     98,
+     105
+    ],
+    "pdf": [
+     82,
+     84
+    ],
+    "graphics": [
+     34,
+     36
+    ],
+    "fonts": [
+     3,
+     3
+    ],
+    "images": [
+     10,
+     14
+    ],
+    "navigation": [
+     2,
+     9
+    ],
+    "css": [
+     32,
+     34
+    ],
+    "robustness": [
+     5,
+     6
+    ],
+    "js": [
+     0,
+     4
+    ]
+   }
+  },
+  "per_doc": {
+   "p01_basic_flow": {
+    "fulgur": "8/8",
+    "fulraikiri": "8/8",
+    "ironpress": "7/8",
+    "takumi": "8/8"
+   },
+   "p02_forced_breaks": {
+    "fulgur": "6/6",
+    "fulraikiri": "6/6",
+    "ironpress": "5/6",
+    "takumi": "6/6"
+   },
+   "p03_break_inside_avoid": {
+    "fulgur": "6/6",
+    "fulraikiri": "6/6",
+    "ironpress": "5/6",
+    "takumi": "6/6"
+   },
+   "p04_orphans_widows": {
+    "fulgur": "5/6",
+    "fulraikiri": "6/6",
+    "ironpress": "4/6",
+    "takumi": "6/6"
+   },
+   "p05_table_thead_repeat": {
+    "fulgur": "9/10",
+    "fulraikiri": "10/10",
+    "ironpress": "9/10",
+    "takumi": "10/10"
+   },
+   "p06_margin_boxes": {
+    "fulgur": "7/7",
+    "fulraikiri": "7/7",
+    "ironpress": "6/7",
+    "takumi": "7/7"
+   },
+   "p07_named_pages": {
+    "fulgur": "5/6",
+    "fulraikiri": "5/6",
+    "ironpress": "4/6",
+    "takumi": "6/6"
+   },
+   "p08_page_size_inches": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "5/5"
+   },
+   "p09_page_size_letter_landscape": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "5/5"
+   },
+   "p10_flex_fragmentation": {
+    "fulgur": "8/8",
+    "fulraikiri": "8/8",
+    "ironpress": "7/8",
+    "takumi": "8/8"
+   },
+   "p11_grid_fragmentation": {
+    "fulgur": "9/9",
+    "fulraikiri": "9/9",
+    "ironpress": "8/9",
+    "takumi": "9/9"
+   },
+   "p12_footnotes": {
+    "fulgur": "4/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "4/5"
+   },
+   "p13_running_strings": {
+    "fulgur": "4/5",
+    "fulraikiri": "4/5",
+    "ironpress": "3/5",
+    "takumi": "4/5"
+   },
+   "p14_running_elements": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "4/5"
+   },
+   "p15_break_after_avoid": {
+    "fulgur": "4/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "5/5"
+   },
+   "l01_table_structure": {
+    "fulgur": "7/12",
+    "fulraikiri": "12/12",
+    "ironpress": "10/12",
+    "takumi": "12/12"
+   },
+   "l02_flex": {
+    "fulgur": "15/15",
+    "fulraikiri": "15/15",
+    "ironpress": "15/16",
+    "takumi": "15/15"
+   },
+   "l03_grid": {
+    "fulgur": "18/18",
+    "fulraikiri": "18/18",
+    "ironpress": "18/19",
+    "takumi": "18/18"
+   },
+   "l04_multicol": {
+    "fulgur": "4/9",
+    "fulraikiri": "9/9",
+    "ironpress": "3/9",
+    "takumi": "7/9"
+   },
+   "l05_floats": {
+    "fulgur": "6/8",
+    "fulraikiri": "8/8",
+    "ironpress": "6/8",
+    "takumi": "8/8"
+   },
+   "l06_positioning": {
+    "fulgur": "8/8",
+    "fulraikiri": "7/8",
+    "ironpress": "7/8",
+    "takumi": "7/8"
+   },
+   "l07_box_model": {
+    "fulgur": "10/10",
+    "fulraikiri": "10/10",
+    "ironpress": "10/11",
+    "takumi": "5/10"
+   },
+   "l08_invoice": {
+    "fulgur": "8/8",
+    "fulraikiri": "8/8",
+    "ironpress": "7/8",
+    "takumi": "8/8"
+   },
+   "t01_rtl": {
+    "fulgur": "8/8",
+    "fulraikiri": "8/8",
+    "ironpress": "6/8",
+    "takumi": "8/8"
+   },
+   "t02_cjk": {
+    "fulgur": "7/7",
+    "fulraikiri": "7/7",
+    "ironpress": "6/7",
+    "takumi": "7/7"
+   },
+   "t03_indic": {
+    "fulgur": "5/7",
+    "fulraikiri": "6/7",
+    "ironpress": "2/7",
+    "takumi": "6/7"
+   },
+   "t04_emoji": {
+    "fulgur": "6/6",
+    "fulraikiri": "6/6",
+    "ironpress": "4/6",
+    "takumi": "6/6"
+   },
+   "t05_long_words": {
+    "fulgur": "6/6",
+    "fulraikiri": "6/6",
+    "ironpress": "5/6",
+    "takumi": "6/6"
+   },
+   "t06_hyphenation": {
+    "fulgur": "4/7",
+    "fulraikiri": "6/7",
+    "ironpress": "5/7",
+    "takumi": "6/7"
+   },
+   "t07_justify": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "5/5"
+   },
+   "t08_whitespace": {
+    "fulgur": "5/6",
+    "fulraikiri": "6/6",
+    "ironpress": "5/6",
+    "takumi": "6/6"
+   },
+   "t09_vertical": {
+    "fulgur": "3/4",
+    "fulraikiri": "1/3",
+    "ironpress": "3/4",
+    "takumi": "3/4"
+   },
+   "f01_webfonts": {
+    "fulgur": "4/7",
+    "fulraikiri": "7/7",
+    "ironpress": "4/7",
+    "takumi": "7/7"
+   },
+   "i01_images": {
+    "fulgur": "8/15",
+    "fulraikiri": "14/15",
+    "ironpress": "9/16",
+    "takumi": "11/15"
+   },
+   "g01_decorations": {
+    "fulgur": "17/19",
+    "fulraikiri": "18/19",
+    "ironpress": "9/19",
+    "takumi": "18/19"
+   },
+   "g02_transforms": {
+    "fulgur": "8/9",
+    "fulraikiri": "8/9",
+    "ironpress": "8/10",
+    "takumi": "8/9"
+   },
+   "g03_overflow_clip": {
+    "fulgur": "9/9",
+    "fulraikiri": "9/9",
+    "ironpress": "7/9",
+    "takumi": "7/8"
+   },
+   "g04_zindex": {
+    "fulgur": "3/4",
+    "fulraikiri": "4/4",
+    "ironpress": "4/5",
+    "takumi": "4/4"
+   },
+   "g05_report_svg": {
+    "fulgur": "10/10",
+    "fulraikiri": "10/10",
+    "ironpress": "9/10",
+    "takumi": "9/10"
+   },
+   "n01_links_bookmarks_meta": {
+    "fulgur": "7/11",
+    "fulraikiri": "7/11",
+    "ironpress": "6/11",
+    "takumi": "6/11"
+   },
+   "n02_target_counter": {
+    "fulgur": "4/5",
+    "fulraikiri": "4/5",
+    "ironpress": "4/5",
+    "takumi": "4/5"
+   },
+   "n03_bookmarks_gcpm": {
+    "fulgur": "4/5",
+    "fulraikiri": "4/5",
+    "ironpress": "3/5",
+    "takumi": "4/5"
+   },
+   "c01_css_modern": {
+    "fulgur": "23/34",
+    "fulraikiri": "32/34",
+    "ironpress": "29/34",
+    "takumi": "32/34"
+   },
+   "c02_lists_counters": {
+    "fulgur": "6/8",
+    "fulraikiri": "8/8",
+    "ironpress": "6/8",
+    "takumi": "8/8"
+   },
+   "r01_malformed": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "4/5",
+    "takumi": "5/5"
+   },
+   "r02_deep_nesting": {
+    "fulgur": "2/4",
+    "fulraikiri": "0/1 ERROR",
+    "ironpress": "0/1 ERROR",
+    "takumi": "0/1 ERROR"
+   },
+   "r03_wide_dom": {
+    "fulgur": "5/5",
+    "fulraikiri": "5/5",
+    "ironpress": "0/1 CRASH",
+    "takumi": "5/5"
+   },
+   "r04_stress_100_pages": {
+    "fulgur": "7/7",
+    "fulraikiri": "7/7",
+    "ironpress": "6/7",
+    "takumi": "7/7"
+   },
+   "j01_javascript": {
+    "fulgur": "4/8",
+    "fulraikiri": "4/8",
+    "ironpress": "3/8",
+    "takumi": "4/8"
+   }
+  },
+  "perf": {
+   "fulgur": {
+    "status": "OK",
+    "rc": 0,
+    "elapsed_s": 0.536,
+    "peak_rss_mb": 77.3
+   },
+   "fulraikiri": {
+    "status": "OK",
+    "rc": 0,
+    "elapsed_s": 1.058,
+    "peak_rss_mb": 319.3
+   },
+   "ironpress": {
+    "status": "OK",
+    "rc": 0,
+    "elapsed_s": 25.66,
+    "peak_rss_mb": 90.4
+   },
+   "takumi": {
+    "status": "OK",
+    "rc": 0,
+    "elapsed_s": 0.466,
+    "peak_rss_mb": 193.0
+   }
+  },
+  "determinism": {
+   "fulgur": {
+    "byte_identical": 49
+   },
+   "fulraikiri": {
+    "byte_identical": 48,
+    "n/a": 1
+   },
+   "ironpress": {
+    "byte_identical": 47,
+    "n/a": 2
+   },
+   "takumi": {
+    "byte_identical": 48,
+    "n/a": 1
+   }
+  }
+ },
+ "fidelity": {
+  "blitz": {
+   "d2c": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.6219,
+    "ssim_median": 0.6837,
+    "text_recall_mean": null,
+    "blank": 1,
+    "elapsed_p50": 0.152,
+    "elapsed_p95": 0.328,
+    "rss_p95_mb": 43.9
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.8244,
+    "ssim_median": 0.8445,
+    "text_recall_mean": null,
+    "blank": 0,
+    "elapsed_p50": 0.077,
+    "elapsed_p95": 0.094,
+    "rss_p95_mb": 25.6
+   }
+  },
+  "fulgur": {
+   "d2c": {
+    "n": 120,
+    "ok": 119,
+    "status": {
+     "OK": 119,
+     "CRASH": 1
+    },
+    "ssim_mean": 0.6451,
+    "ssim_median": 0.6514,
+    "text_recall_mean": 0.7793,
+    "blank": 13,
+    "elapsed_p50": 0.08,
+    "elapsed_p95": 0.191,
+    "rss_p95_mb": 41.9
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.8556,
+    "ssim_median": 0.8958,
+    "text_recall_mean": 0.9748,
+    "blank": 0,
+    "elapsed_p50": 0.058,
+    "elapsed_p95": 0.065,
+    "rss_p95_mb": 18.5
+   }
+  },
+  "fulraikiri": {
+   "d2c": {
+    "n": 120,
+    "ok": 119,
+    "status": {
+     "OK": 119,
+     "ERROR": 1
+    },
+    "ssim_mean": 0.6475,
+    "ssim_median": 0.6348,
+    "text_recall_mean": 0.8563,
+    "blank": 1,
+    "elapsed_p50": 0.077,
+    "elapsed_p95": 0.359,
+    "rss_p95_mb": 57.8
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.8266,
+    "ssim_median": 0.8353,
+    "text_recall_mean": 0.9784,
+    "blank": 0,
+    "elapsed_p50": 0.041,
+    "elapsed_p95": 0.049,
+    "rss_p95_mb": 29.9
+   }
+  },
+  "ironpress": {
+   "d2c": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.6113,
+    "ssim_median": 0.6004,
+    "text_recall_mean": 0.7607,
+    "blank": 5,
+    "elapsed_p50": 1.24,
+    "elapsed_p95": 7.455,
+    "rss_p95_mb": 148.5
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.8058,
+    "ssim_median": 0.8288,
+    "text_recall_mean": 0.9506,
+    "blank": 1,
+    "elapsed_p50": 0.106,
+    "elapsed_p95": 0.13,
+    "rss_p95_mb": 62.8
+   }
+  },
+  "raikiri": {
+   "d2c": {
+    "n": 120,
+    "ok": 119,
+    "status": {
+     "OK": 119,
+     "ERROR": 1
+    },
+    "ssim_mean": 0.6948,
+    "ssim_median": 0.6942,
+    "text_recall_mean": null,
+    "blank": 0,
+    "elapsed_p50": 0.124,
+    "elapsed_p95": 0.254,
+    "rss_p95_mb": 48.8
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.8268,
+    "ssim_median": 0.8427,
+    "text_recall_mean": null,
+    "blank": 0,
+    "elapsed_p50": 0.06,
+    "elapsed_p95": 0.072,
+    "rss_p95_mb": 33.6
+   }
+  },
+  "takumi": {
+   "d2c": {
+    "n": 120,
+    "ok": 115,
+    "status": {
+     "OK": 115,
+     "ERROR": 5
+    },
+    "ssim_mean": 0.6519,
+    "ssim_median": 0.6651,
+    "text_recall_mean": 0.8397,
+    "blank": 1,
+    "elapsed_p50": 0.165,
+    "elapsed_p95": 0.204,
+    "rss_p95_mb": 184.7
+   },
+   "ws": {
+    "n": 120,
+    "ok": 120,
+    "status": {
+     "OK": 120
+    },
+    "ssim_mean": 0.9098,
+    "ssim_median": 0.9458,
+    "text_recall_mean": 0.9893,
+    "blank": 0,
+    "elapsed_p50": 0.144,
+    "elapsed_p95": 0.153,
+    "rss_p95_mb": 178.9
+   }
+  }
+ },
+ "builds": {
+  "blitz": {
+   "engine": "blitz",
+   "status": "OK",
+   "build_s": 65,
+   "binary_mb": 27,
+   "sha": "6636442d30ebe29289ebfbb8a3bf53ddfd640a0e"
+  },
+  "fulgur": {
+   "engine": "fulgur",
+   "status": "OK",
+   "build_s": 40,
+   "binary_mb": 24,
+   "sha": "bd6222fe10c5e4278af385c9a78f3ea0d46f48b5"
+  },
+  "fulraikiri": {
+   "engine": "fulraikiri",
+   "status": "OK",
+   "build_s": 44,
+   "binary_mb": 38,
+   "sha": "bd6222fe10c5e4278af385c9a78f3ea0d46f48b5"
+  },
+  "ironpress": {
+   "engine": "ironpress",
+   "status": "OK",
+   "build_s": 60,
+   "binary_mb": 26,
+   "sha": "dadedd4cd7fcaf257c526f0c480ce526f861de8a"
+  },
+  "raikiri": {
+   "engine": "raikiri",
+   "status": "OK",
+   "build_s": 125,
+   "binary_mb": 29,
+   "sha": "a570d9031237fb18cf015592960adeda906bff30"
+  },
+  "takumi": {
+   "engine": "takumi",
+   "status": "OK",
+   "build_s": 132,
+   "binary_mb": 9,
+   "sha": "d5bf755e6372855c5b5fc2487e4757f28a6ebed7"
+  }
+ }
+}
