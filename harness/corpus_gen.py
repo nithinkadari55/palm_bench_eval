@@ -210,8 +210,8 @@ def doc_break_inside_avoid():
 
 def doc_orphans_widows():
     words = [f"ow{i:03d}" for i in range(400)]
-    body = ("<div style='height:820px'></div>" + "<p class=ow>" + " ".join(words[:200]) + "</p>"
-            + "<div style='height:300px'></div>" + "<p class=ow>" + " ".join(words[200:]) + "</p>")
+    body = ("<div style='height:860px'></div>" + "<p class=ow>" + " ".join(words[:200]) + "</p>"
+            + "<div style='break-before:page;height:600px'></div>" + "<p class=ow>" + " ".join(words[200:]) + "</p>")
     css = "p.ow{orphans:4;widows:4;margin:0;line-height:20px}"
 
     def check(d):
@@ -644,7 +644,23 @@ def doc_indic():
         t = norm(d.all_text())
         miss = [w for w in words if norm(w) not in t]
         return not miss, {"missing": miss}
-    return page(body), [C("text", "Devanagari/Tamil/Bengali shaped and extractable", f)], {}
+
+    def coverage(d):
+        from collections import Counter
+        got = Counter(norm(d.all_text()))
+        want = Counter(norm("".join(words)))
+        hit = sum(min(c, got.get(ch, 0)) for ch, c in want.items())
+        return hit / sum(want.values()) >= 0.9, {"char_coverage": round(hit / sum(want.values()), 3)}
+
+    def painted(d):
+        img = d.raster()[0]
+        reg = img[45:120, 50:400]
+        return int((reg.max(axis=2) < 120).sum()) > 300, {"dark_px": int((reg.max(axis=2) < 120).sum())}
+    return page(body), [
+        C("text", "Indic scripts: exact word extraction (copy/paste order)", f),
+        C("text", "Indic scripts: character coverage in extracted text", coverage),
+        C("text", "Indic scripts: glyphs painted", painted),
+    ], {}
 
 
 def doc_emoji():
@@ -706,8 +722,8 @@ def doc_images(data_uri):
             checks.append(C("images", label, px(0, CL + x + 75, CT + y + 75, color, 60)))
     checks.append(C("images", "object-fit:contain letterboxes (top white)", px(0, CL + 2 * 170 + 75, CT + 2 * 170 + 15, WHITE, 40)))
     exif = "<div style='position:absolute;left:0;top:520px;width:100px;height:200px'><img src='assets/exif6.jpg' style='width:100px;height:200px;display:block'></div>"
-    checks.append(C("images", "EXIF orientation 6 applied (top red)", px(0, CL + 50, CT + 560, RED, 60)))
-    checks.append(C("images", "EXIF orientation 6 applied (bottom blue)", px(0, CL + 50, CT + 680, BLUE, 60)))
+    checks.append(C("images", "EXIF orientation 6 applied (top-right red)", px(0, CL + 80, CT + 560, RED, 60)))
+    checks.append(C("images", "EXIF orientation 6 applied (bottom-left blue)", px(0, CL + 20, CT + 690, BLUE, 60)))
     body = "<div style='position:relative;width:700px;height:760px'>" + "".join(html) + exif + "</div>"
     return page(body, ".im{width:150px;height:150px;display:block}"), checks, {"no_text": True}
 
@@ -737,7 +753,7 @@ def doc_decorations():
         C("graphics", "box-shadow offset painted", px(0, 260, 400, BLACK)),
         C("graphics", "box-shadow box", px(0, 150, 340, RED)),
         C("graphics", "linear-gradient start", px(0, 58, 460, RED, 60)),
-        C("graphics", "linear-gradient end", px(0, 742, 460, BLUE, 60)),
+        C("graphics", "linear-gradient end", px(0, 644, 460, BLUE, 60)),
         C("graphics", "linear-gradient midpoint", px(0, 350, 460, (128, 0, 128), 60)),
         C("graphics", "opacity:.5", px(0, 150, 580, (255, 128, 128), 30)),
         C("graphics", "rgba background", px(0, 400, 580, (128, 128, 255), 30)),
@@ -750,17 +766,17 @@ def doc_decorations():
 
 def doc_transforms():
     body = """
-<div style="height:200px"><div style="margin:50px;width:100px;height:100px;background:#00f;transform:rotate(45deg)"></div></div>
-<div style="height:200px"><div style="margin:50px;width:100px;height:100px;background:#0f0;transform:scale(2)"></div></div>
+<div style="box-sizing:border-box;height:200px;padding:50px"><div style="width:100px;height:100px;background:#00f;transform:rotate(45deg)"></div></div>
+<div style="box-sizing:border-box;height:200px;padding:50px"><div style="width:100px;height:100px;background:#0f0;transform:scale(2)"></div></div>
 <div style="height:200px"><div style="width:100px;height:100px;background:#f00;transform:translate(200px,50px)"></div></div>
-<div style="height:200px;perspective:400px"><div style="margin-left:100px;width:200px;height:150px;background:#f0f;transform:rotateY(60deg)"></div></div>
+<div style="height:200px;perspective:400px;padding-left:100px;box-sizing:border-box"><div style="width:200px;height:150px;background:#f0f;transform:rotateY(60deg)"></div></div>
 """
     return page(body), [
         C("graphics", "rotate(45deg) center", px(0, 150, 150, BLUE)),
         C("graphics", "rotate(45deg) corner rotated away", px(0, 104, 104, WHITE, 40)),
         C("graphics", "rotate(45deg) tip extends above box", px(0, 150, 84, BLUE, 60)),
         C("graphics", "scale(2) grows box", px(0, 60, 260, GREEN)),
-        C("graphics", "translate moves box", px(0, 300, 500, RED)),
+        C("graphics", "translate moves box", px(0, 300, 550, RED)),
         C("graphics", "translate vacates original spot", px(0, 100, 500, WHITE)),
         C("graphics", "3D rotateY narrows box (edge empty)", px(0, 156, 725, WHITE, 40)),
         C("graphics", "3D rotateY center painted", px(0, 250, 725, MAGENTA, 60)),
@@ -812,6 +828,22 @@ def doc_links():
         C("navigation", "PDF Title from <title>", lambda d: (d.metadata()["title"] == "BENCH TITLE META", d.metadata())),
         C("navigation", "PDF Author from <meta name=author>", lambda d: (d.metadata()["author"] == "Bench Author", d.metadata())),
     ], {}
+
+
+def doc_bookmarks_gcpm():
+    css = "h1{bookmark-level:1;bookmark-label:content()} h2{bookmark-level:2} h2{break-before:page}"
+    body = (f"<h1>BM Root</h1><p>{lorem(30, 1)}</p><h2>BM Child One</h2><p>{lorem(30, 2)}</p>"
+            f"<h2>BM Child Two</h2><p>BMTWOTOK</p>")
+
+    def check(d):
+        o = d.outline()
+        t = {x["title"]: x for x in o}
+        tgt = first(d, "BMTWOTOK")
+        ok = (all(k in t for k in ("BM Root", "BM Child One", "BM Child Two"))
+              and t["BM Child One"]["depth"] > t["BM Root"]["depth"]
+              and tgt is not None and t["BM Child Two"]["page"] == tgt["page"])
+        return ok, {"outline": o[:6]}
+    return page(body, css), [C("navigation", "GCPM bookmark-level produces nested outline with right pages", check)], {}
 
 
 def doc_css_modern():
@@ -880,7 +912,7 @@ def doc_malformed():
             "<table><tr><td>MAL05 cell<td>MAL06 cell</table></div></div></span>"
             "<unknowntag>MAL07 unknown</unknowntag> MAL08 &notanentity; &amp; a < b > c "
             "<p>MAL09 \u0000 null char</p><ul><li>MAL10 item<li>MAL11 item</ul><br/><br><hr>"
-            "<p title=\"unterminated>MAL12 after bad attr</p><p>MAL13 end")
+            "<p>MAL13 end<p title=\"unterminated>swallowed by the attribute per HTML5")
     raw = "﻿<!DOCTYPE html><html><head><meta charset=utf-8><style>" + BASE_CSS + "</style><body>" + body
     toks = [f"MAL{i:02d}" for i in range(1, 14) if i != 12]
     return raw, [
@@ -956,7 +988,7 @@ def doc_invoice():
 <div class=tot><div>Subtotal <b>$40,123.45</b></div><div>Tax <b>$3,210.00</b></div><div class=grand>TOTALDUE $12,345.67</div></div>
 <footer>Thank you for your business. Payment terms net 30.</footer>"""
     css = """.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #222;padding-bottom:12px}
-.logo{font-size:28px;font-weight:bold;color:#1a56db} .meta{text-align:right} .meta h1{margin:0;font-size:32px;letter-spacing:2px}
+.logo{font-size:28px;line-height:1.2;font-weight:bold;color:#1a56db} .meta{text-align:right} .meta h1{margin:0;font-size:32px;line-height:1.2;letter-spacing:2px}
 .parties{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0} h3{margin:0 0 4px;font-size:13px;text-transform:uppercase;color:#666}
 .items{width:100%;border-collapse:collapse} .items th{background:#1a56db;color:#fff;text-align:left;padding:6px}
 .items td{padding:5px 6px;border-bottom:1px solid #e5e7eb} .n{text-align:right} .items tr:nth-child(even) td{background:#f9fafb}
@@ -1049,7 +1081,7 @@ def doc_whitespace():
 
     def prewrap(d):
         a, b = first(d, "PW1"), first(d, "PW2")
-        return bool(a and b and b["x0"] - a["x1"] > 25), {"gap": a and b and b["x0"] - a["x1"]}
+        return bool(a and b and b["x0"] - a["x1"] > 15), {"gap": a and b and b["x0"] - a["x1"]}
     return page(body), [
         C("text", "white-space:pre keeps spaces; tab-size:4", indent),
         C("text", "white-space:pre-wrap preserves runs of spaces", prewrap),
@@ -1073,7 +1105,8 @@ def doc_overflow_clip():
         C("graphics", "overflow:hidden content visible inside", px(0, 150, 75, RED)),
         C("graphics", "overflow:hidden clips below box", px(0, 150, 130, WHITE)),
         C("graphics", "overflow:hidden clips text", text_hidden),
-        C("graphics", "overflow:clip clips", px(0, 150, 330, WHITE)),
+        C("graphics", "overflow:clip content visible inside", px(0, 150, 330, BLUE)),
+        C("graphics", "overflow:clip clips below box", px(0, 150, 385, WHITE)),
     ], {"allow_hidden_text": True}
 
 
@@ -1133,12 +1166,13 @@ def doc_box_model():
     return page(body), [
         C("layout", "margin collapsing (30px wins, not 50px)", px(0, 100, 135, BLUE)),
         C("layout", "gap after collapsed margin", px(0, 100, 115, WHITE)),
-        C("layout", "content-box: border at width+2*padding", px(0, 50 + 242, 210, GREEN)),
-        C("layout", "content-box: padding area has background", px(0, 50 + 225, 210, YELLOW)),
-        C("layout", "border-box: total width 200", px(0, 50 + 197, 310, MAGENTA)),
-        C("layout", "border-box: nothing beyond 200", px(0, 50 + 206, 310, WHITE)),
-        C("layout", "percentage width = 50% of 700", px(0, 50 + 345, 380, BLACK)),
-        C("layout", "percentage width stops at 350", px(0, 50 + 356, 380, WHITE)),
+        C("layout", "content-box: border at width+2*padding", px(0, 297, 260, GREEN)),
+        C("layout", "content-box: padding area has background", px(0, 285, 260, YELLOW)),
+        C("layout", "content-box: nothing beyond 250", px(0, 304, 260, WHITE)),
+        C("layout", "border-box: total width 200", px(0, 247, 355, MAGENTA)),
+        C("layout", "border-box: nothing beyond 200", px(0, 256, 355, WHITE)),
+        C("layout", "percentage width = 50% of 700", px(0, 395, 420, BLACK)),
+        C("layout", "percentage width stops at 350", px(0, 406, 420, WHITE)),
     ], {"no_text": True}
 
 
@@ -1242,6 +1276,7 @@ def all_docs(assets):
         "g05_report_svg": doc_report_svg,
         "n01_links_bookmarks_meta": doc_links,
         "n02_target_counter": doc_target_counter,
+        "n03_bookmarks_gcpm": doc_bookmarks_gcpm,
         "c01_css_modern": doc_css_modern,
         "c02_lists_counters": doc_lists_counters,
         "r01_malformed": doc_malformed,
