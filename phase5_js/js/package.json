@@ -1,0 +1,24 @@
+{
+  "name": "phase5-js-bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 5 JS runtime bench: library bundles and the Node baseline runner",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@mathjax/mathjax-newcm-font": "4.1.3",
+    "@mathjax/src": "4.1.3",
+    "chart.js": "4.6.1",
+    "d3": "7.9.2",
+    "echarts": "6.1.0",
+    "jsdom": "31.0.1",
+    "linkedom": "0.18.15",
+    "zrender": "6.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

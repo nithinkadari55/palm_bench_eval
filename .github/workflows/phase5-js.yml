@@ -1,0 +1,359 @@
+name: phase5-js
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "phase5_js/**"
+      - ".github/workflows/phase5-js.yml"
+
+concurrency:
+  group: phase5-js-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  P5: phase5_js
+  TZ: UTC
+  LC_ALL: C.UTF-8
+  NODE_VERSION: "24.22.1"
+  # test262 commit pinned by quickjs-ng 0fdea21 (the submodule of the QuickJS-NG commit vendored in rquickjs-sys 0.14.0)
+  TEST262_SHA: 5ef1e5723be95296f36afb0386676fed0205869c
+  RQUICKJS_SYS_SHA256: cee271d0eeba64f0915b846cb7ae02e16faf3dfdffdca91731101d9d30fe3423
+  # boa_tester reference run: Boa tag v0.22 and the test262 commit its test262_config.toml pins
+  BOA_TAG: v0.22
+  BOA_SHA: 337a3668a0dc86dd401ea20906e782249a64a228
+  BOA_TEST262_SHA: d86b2294eb0a17eaa281ff12c73c473ec864c72f
+
+jobs:
+  build-js:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: npm ci (exact versions from package-lock.json)
+        working-directory: phase5_js/js
+        run: |
+          node --version
+          npm --version
+          npm ci --no-audit --no-fund
+
+      - name: Bundle libraries (esbuild) and write case files
+        working-directory: phase5_js/js
+        run: node build.mjs
+
+      - name: Upload dist
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-js-dist
+          path: phase5_js/js/dist/
+          if-no-files-found: warn
+
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [qjs, boa, boa-tester]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/phase5_js/target
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+          mkdir -p "$P5/results" "$P5/data" "$P5/work" "$P5/locks"
+          nproc
+          free -m
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            phase5_js/target
+          key: p5-conf-${{ matrix.engine }}-${{ hashFiles('phase5_js/crates/**/Cargo.toml') }}
+          restore-keys: |
+            p5-conf-${{ matrix.engine }}-
+
+      - name: Clone test262 at the pinned commit
+        if: matrix.engine != 'boa-tester'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$P5/work/test262"
+          git -C "$P5/work/test262" remote add origin https://github.com/tc39/test262.git
+          git -C "$P5/work/test262" fetch -q --depth 1 origin "$TEST262_SHA"
+          git -C "$P5/work/test262" checkout -q FETCH_HEAD
+          test "$(git -C "$P5/work/test262" rev-parse HEAD)" = "$TEST262_SHA"
+          find "$P5/work/test262/test" -name '*.js' | wc -l
+
+      - name: QuickJS-NG test262.conf and test262_errors.txt (rquickjs-sys 0.14.0 crate, sha256 verified)
+        if: matrix.engine != 'boa-tester'
+        continue-on-error: true
+        run: |
+          set -e
+          curl -fsSL --retry 5 -o "$P5/work/rquickjs-sys.crate" https://static.crates.io/crates/rquickjs-sys/rquickjs-sys-0.14.0.crate
+          echo "${RQUICKJS_SYS_SHA256}  $P5/work/rquickjs-sys.crate" | sha256sum -c -
+          tar -xzf "$P5/work/rquickjs-sys.crate" -C "$P5/work" rquickjs-sys-0.14.0/quickjs/test262.conf rquickjs-sys-0.14.0/quickjs/test262_errors.txt
+          cp "$P5/work/rquickjs-sys-0.14.0/quickjs/test262_errors.txt" "$P5/data/test262_errors.txt"
+          python -I "$P5/scripts/t262_config.py" --conf "$P5/work/rquickjs-sys-0.14.0/quickjs/test262.conf" --commit "$TEST262_SHA" --out "$P5/data/t262.json"
+          cp "$P5/data/t262.json" "$P5/results/test262_config_used.json"
+
+      - name: "${{ matrix.engine }}: build harness"
+        if: matrix.engine != 'boa-tester'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P5/crates/${{ matrix.engine }}/Cargo.toml"
+          cp "$P5/crates/${{ matrix.engine }}/Cargo.lock" "$P5/locks/${{ matrix.engine }}.Cargo.lock"
+
+      - name: "${{ matrix.engine }}: test262 (built-ins, language, annexB, staging per QuickJS-NG config), strict + sloppy"
+        if: matrix.engine != 'boa-tester'
+        continue-on-error: true
+        run: |
+          ulimit -v 8000000
+          extra=""
+          if [ "${{ matrix.engine }}" = "qjs" ]; then extra="--expected-errors $P5/data/test262_errors.txt"; fi
+          "$CARGO_TARGET_DIR/release/p5-${{ matrix.engine }}" test262 --root "$P5/work/test262" --config "$P5/data/t262.json" \
+            --dirs test/built-ins,test/language,test/annexB,test/staging --out "$P5/results/test262_${{ matrix.engine }}.json" \
+            --work "$P5/work/t262" --timeout-ms 10000 $extra
+
+      - name: "${{ matrix.engine }}: test262 intl402 (Intl gap)"
+        if: matrix.engine != 'boa-tester'
+        continue-on-error: true
+        run: |
+          ulimit -v 8000000
+          "$CARGO_TARGET_DIR/release/p5-${{ matrix.engine }}" test262 --root "$P5/work/test262" --config "$P5/data/t262.json" \
+            --dirs test/intl402 --keep-intl --out "$P5/results/test262_intl402_${{ matrix.engine }}.json" --work "$P5/work/t262i" --timeout-ms 10000
+
+      - name: "boa-tester: clone boa ${{ env.BOA_TAG }} and its pinned test262"
+        if: matrix.engine == 'boa-tester'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$P5/work/boa"
+          git -C "$P5/work/boa" remote add origin https://github.com/boa-dev/boa.git
+          git -C "$P5/work/boa" fetch -q --depth 1 origin "refs/tags/${BOA_TAG}"
+          git -C "$P5/work/boa" checkout -q FETCH_HEAD
+          test "$(git -C "$P5/work/boa" rev-parse HEAD)" = "$BOA_SHA"
+          grep -n '^commit' "$P5/work/boa/test262_config.toml"
+          git init -q "$P5/work/boa-test262"
+          git -C "$P5/work/boa-test262" remote add origin https://github.com/tc39/test262.git
+          git -C "$P5/work/boa-test262" fetch -q --depth 1 origin "$BOA_TEST262_SHA"
+          git -C "$P5/work/boa-test262" checkout -q FETCH_HEAD
+
+      - name: "boa-tester: build and run boa_tester (Boa's own runner and ignore list)"
+        if: matrix.engine == 'boa-tester'
+        continue-on-error: true
+        run: |
+          cd "$P5/work/boa"
+          cargo build --release --bin boa_tester
+          cp Cargo.lock "$GITHUB_WORKSPACE/$P5/locks/boa-upstream.Cargo.lock" || true
+          ( ulimit -v 16000000
+            "$CARGO_TARGET_DIR/release/boa_tester" run -o "$GITHUB_WORKSPACE/$P5/work/boa_tester_out" \
+              --test262-path "$GITHUB_WORKSPACE/$P5/work/boa-test262" > "$GITHUB_WORKSPACE/$P5/results/boa_tester.log" 2>&1 ) || true
+          tail -n 40 "$GITHUB_WORKSPACE/$P5/results/boa_tester.log"
+
+      - name: "boa-tester: summarize"
+        if: matrix.engine == 'boa-tester'
+        continue-on-error: true
+        run: python -I "$P5/scripts/boa_tester_summary.py" --dir "$P5/work/boa_tester_out" --out "$P5/results/test262_boa_tester.json" --boa-tag "$BOA_TAG"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-results-conformance-${{ matrix.engine }}
+          path: |
+            phase5_js/results/
+          if-no-files-found: warn
+
+      - name: Upload Cargo.lock files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-cargo-lock-conformance-${{ matrix.engine }}
+          path: phase5_js/locks/
+          if-no-files-found: ignore
+
+  libs:
+    needs: build-js
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [qjs, boa, node]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/phase5_js/target
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: phase5-js-dist
+          path: phase5_js/js/dist
+
+      - name: Prepare
+        run: |
+          mkdir -p "$P5/results" "$P5/work" "$P5/locks"
+          cp "$P5/js/dist/bundles.json" "$P5/results/bundles.json"
+          ls -la "$P5/js/dist" "$P5/js/dist/cases"
+
+      - name: Rust toolchain
+        if: matrix.engine != 'node'
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+
+      - uses: actions/cache@v4
+        if: matrix.engine != 'node'
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            phase5_js/target
+          key: p5-libs-${{ matrix.engine }}-${{ hashFiles('phase5_js/crates/**/Cargo.toml') }}
+          restore-keys: |
+            p5-libs-${{ matrix.engine }}-
+
+      - name: "${{ matrix.engine }}: build harness"
+        if: matrix.engine != 'node'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P5/crates/${{ matrix.engine }}/Cargo.toml"
+          cp "$P5/crates/${{ matrix.engine }}/Cargo.lock" "$P5/locks/${{ matrix.engine }}.Cargo.lock"
+
+      - name: "node: npm ci (JSDOM for the Node baseline)"
+        if: matrix.engine == 'node'
+        continue-on-error: true
+        working-directory: phase5_js/js
+        run: npm ci --no-audit --no-fund
+
+      - name: "${{ matrix.engine }}: libraries x3 runs (outputs, time, determinism) + per-case processes (peak RSS)"
+        continue-on-error: true
+        run: |
+          case "${{ matrix.engine }}" in
+            qjs)  python -I "$P5/scripts/run_cases.py" --engine qjs --bin "$CARGO_TARGET_DIR/release/p5-qjs" --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups probe,echarts,mathjax,chartjs,d3,dom,layout --reps 3 --isolated -1 --timeout-s 900 --as-limit-mb 8192 --work "$P5/work/cases" --out "$P5/results" ;;
+            boa)  python -I "$P5/scripts/run_cases.py" --engine boa --bin "$CARGO_TARGET_DIR/release/p5-boa" --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups probe,echarts,mathjax,chartjs,d3,dom,layout --reps 3 --isolated 5 --timeout-s 2400 --as-limit-mb 8192 --work "$P5/work/cases" --out "$P5/results" ;;
+            node) python -I "$P5/scripts/run_cases.py" --engine node --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups probe,echarts,mathjax,chartjs,d3,dom,layout --reps 3 --isolated -1 --timeout-s 900 --work "$P5/work/cases" --out "$P5/results"
+                  python -I "$P5/scripts/run_cases.py" --engine node-jsdom --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups dom,layout --reps 3 --isolated -1 --timeout-s 900 --work "$P5/work/cases" --out "$P5/results" ;;
+          esac
+
+      - name: "${{ matrix.engine }}: sandbox (limits + escape attempts), one process per case"
+        continue-on-error: true
+        run: |
+          case "${{ matrix.engine }}" in
+            qjs)  python -I "$P5/scripts/run_cases.py" --engine qjs --bin "$CARGO_TARGET_DIR/release/p5-qjs" --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups sandbox_limits,sandbox_escapes --reps 3 --sandbox-timeout-ms 5000 --as-limit-mb 4096 --work "$P5/work/sandbox" --out "$P5/results" ;;
+            boa)  python -I "$P5/scripts/run_cases.py" --engine boa --bin "$CARGO_TARGET_DIR/release/p5-boa" --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups sandbox_limits,sandbox_escapes --reps 3 --sandbox-timeout-ms 5000 --as-limit-mb 4096 --work "$P5/work/sandbox" --out "$P5/results" ;;
+            node) python -I "$P5/scripts/run_cases.py" --engine node --js "$P5/js" --dist "$P5/js/dist" \
+                    --groups sandbox_escapes --reps 3 --sandbox-timeout-ms 5000 --work "$P5/work/sandbox" --out "$P5/results" ;;
+          esac
+
+      - name: "qjs: two-pass layout-feedback prototype"
+        if: matrix.engine == 'qjs'
+        continue-on-error: true
+        run: |
+          "$CARGO_TARGET_DIR/release/p5-qjs" layout --cases "$P5/js/dist/cases/layout.json" --dist "$P5/js/dist" --out "$P5/results/layout_qjs.json"
+
+      - name: "${{ matrix.engine }}: shim ablation (which library needs which host API)"
+        continue-on-error: true
+        run: |
+          case "${{ matrix.engine }}" in
+            qjs)  python -I "$P5/scripts/ablation.py" --engine qjs --bin "$CARGO_TARGET_DIR/release/p5-qjs" --js "$P5/js" --dist "$P5/js/dist" --work "$P5/work/abl" --out "$P5/results/ablation_qjs.json" ;;
+            boa)  python -I "$P5/scripts/ablation.py" --engine boa --bin "$CARGO_TARGET_DIR/release/p5-boa" --js "$P5/js" --dist "$P5/js/dist" --groups echarts,chartjs,d3,dom --timeout-s 2400 --work "$P5/work/abl" --out "$P5/results/ablation_boa.json" ;;
+            node) python -I "$P5/scripts/ablation.py" --engine node --js "$P5/js" --dist "$P5/js/dist" --work "$P5/work/abl" --out "$P5/results/ablation_node.json" ;;
+          esac
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-results-libs-${{ matrix.engine }}
+          path: |
+            phase5_js/results/
+          if-no-files-found: warn
+
+      - name: Upload Cargo.lock files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-cargo-lock-libs-${{ matrix.engine }}
+          path: phase5_js/locks/
+          if-no-files-found: ignore
+
+  summary:
+    needs: [build-js, conformance, libs]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase5-results-*
+          path: phase5_js/results
+          merge-multiple: true
+
+      - name: Compare engines, determinism, cost, sandbox
+        continue-on-error: true
+        run: python -I phase5_js/scripts/compare.py --results phase5_js/results --out phase5_js/results/compare.json
+
+      - name: Write step summary
+        if: always()
+        run: |
+          ls -la phase5_js/results || true
+          python -I phase5_js/scripts/summarize.py --results phase5_js/results --out "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload combined results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-results-all
+          path: |
+            phase5_js/results/*.json
+            phase5_js/results/*.txt
+            phase5_js/results/*.log
+          if-no-files-found: warn

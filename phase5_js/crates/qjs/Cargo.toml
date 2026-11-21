@@ -1,0 +1,20 @@
+[package]
+name = "p5-qjs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "p5-qjs"
+path = "src/main.rs"
+
+[dependencies]
+# rquickjs 0.14.0 vendors QuickJS-NG at commit 0fdea21 (quickjs.h says 0.16.2).
+# Features: "loader" for the test262 module loader only. quickjs-libc (std/os) is not compiled.
+rquickjs = { version = "=0.14.0", default-features = false, features = ["std", "loader"] }
+serde_json = "=1.0.154"
+p5-common = { path = "../common" }
+
+[profile.release]
+debug = 1
+panic = "unwind"
