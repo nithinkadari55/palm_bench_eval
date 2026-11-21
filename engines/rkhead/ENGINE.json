@@ -1,0 +1,27 @@
+{
+  "name": "rkhead",
+  "repo": "https://github.com/fulgur-rs/raikiri",
+  "sha": "0fc0ba9f97d22a21a8410cbd5367e88f1a7851b8",
+  "commit_date": "2026-11-21T22:24:29+09:00",
+  "license": "MIT OR Apache-2.0",
+  "output": "pdf",
+  "supports": {
+    "page_rule": true,
+    "default_page_size_config": true,
+    "local_resources": "partial",
+    "system_fonts": true,
+    "font_face": "partial",
+    "geometry": "partial",
+    "diagnostics": "partial",
+    "javascript": false,
+    "svg": "partial",
+    "images": "partial"
+  },
+  "apt_packages": [
+    "fontconfig",
+    "libfontconfig1-dev",
+    "pkg-config"
+  ],
+  "toolchain": "1.95.0",
+  "notes": "Same PDF path as fulraikiri (Fulgur crates/fulgur-raikiri + crates/fulgur-core at fulgur SHA bd6222fe10c5e4278af385c9a78f3ea0d46f48b5, krilla 0.7 painter), but built against raikiri HEAD (origin/main 0fc0ba9f9, 2195 commits after the raikiri-html-v0.0.6 tag) instead of the crates.io raikiri-* 0.0.6 crates. BUILD: build.sh clones raikiri at the pinned SHA as the workspace root, so its Cargo.lock and rust-toolchain.toml (1.95.0) apply. It shallow-fetches fulgur at bd6222fe into a temp dir, copies crates/fulgur-core and crates/fulgur-raikiri into upstream/crates/, then copies engines/rkhead/overlay/ over upstream/. The overlay replaces both Cargo.toml files: workspace-inherited package fields (edition 2024, rust-version 1.89.0, license, repository, homepage) are written out because raikiri's [workspace.package] has no homepage and other values, and raikiri-html/raikiri-net/raikiri-traits \"0.0.6\" become path deps on ../raikiri-html, ../raikiri-net and ../raikiri-traits. build.sh fails if a published raikiri dep or a .workspace = true field is left. crates/fulgur-core, crates/fulgur-raikiri and adapter-rkhead are added to [workspace] members. The new crates are resolved by cargo against raikiri's Cargo.lock without --locked. krilla 0.7.0, flpdf 0.10.0, lopdf 0.45.0, minijinja 2.24.0 and skrifa 0.47.0 all declare rust-version <= 1.89, so they build on 1.95. API PORT: raikiri-html's public surface (lib.rs re-exports and every pub fn/field in its src) is identical between 0.0.6 and HEAD. raikiri-traits and raikiri-net only add API (ImageIntrinsicSize::at_density, Request::redirected, counter-style helpers; NetworkProvider::fetch only changed its default body). The one change that reaches fulgur-raikiri is raikiri-style BackgroundImage, which gained the variant DensityUrl{url, density} for an image-set() option that is not 1x (raikiri-style property/types.rs:8839-8868). The enum is #[non_exhaustive], so the 0.0.6 code still compiles, but its `_` arm would silently drop those layers. The overlay therefore maps DensityUrl to the Url arm in paint/mod.rs:1282-1283 (background layers) and paint/border_image.rs:57 (border-image-source). This is 0.0.6 parity: 0.0.6 stored such a URL as Url and drew it at its natural size. The density is not applied. MarginBoxBackgroundImage gained a density field (raikiri-dom margin_boxes.rs:113), which fulgur reads only by name, so margin-box image-set() images are also drawn at natural size. ContentComponent::Image{url, density}, CascadeResult::computed and the removed raikiri-dom paint_rules helpers are not used by fulgur-raikiri or the adapter. ADAPTER: adapter/src/main.rs is fulraikiri's adapter with only the binary name changed, so it has the same render call, the same @page defaults (Config page_size/margin with overrides false: PageDefaults page box plus a user-origin @page margin rule that author @page overrides), the same base-dir sandboxed file provider, system fonts (AssetBundle::new(), system_fonts true), tolerant missing images (OptionalImages -> ResolveDisposition::Fallback 0x0), per-page geometry from a second raikiri_html::layout (DocumentLayout::pages -> Page::geometry().page_box and Page::fragments(), border-box rects in page-local CSS px), and diagnostics (DocumentLayout::warnings as 'raikiri:<WarningKind>' plus log::warn records). Every raikiri API the adapter calls has the same signature at HEAD (resources.rs:52,308,329,338; document_layout/mod.rs:144,366,371,450; page.rs:213,234; dom_view.rs:78,88; raikiri-dom page_projection/fragment.rs:93,98,116; raikiri-traits error.rs:309-313). Cargo: fulgur-raikiri and fulgur-core by path; raikiri-html/raikiri-net/raikiri-traits/url with workspace = true; log, serde_json and libc from raikiri's Cargo.lock; lopdf 0.45 (new to the lock, already used by fulgur-core); fontique 0.11.1 with fontconfig-dlopen, the same fontique version raikiri locks, as in fulraikiri. Caveats are the same as fulraikiri: geometry excludes margin boxes and transforms, and raikiri's internal eprintln font warnings are not captured. apt: fontconfig is needed at runtime for dlopen, and libfontconfig1-dev and pkg-config are kept for yeslogic-fontconfig-sys."
+}

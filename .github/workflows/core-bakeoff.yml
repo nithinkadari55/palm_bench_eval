@@ -5,7 +5,7 @@ on:
     inputs:
       engines:
         description: "JSON list of engines"
-        default: '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri"]'
+        default: '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri","rkhead"]'
   push:
     branches: [main]
     paths: ["engines/**", "harness/**", ".github/workflows/core-bakeoff.yml"]
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri"]') }}
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri","rkhead"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Read engine pin
@@ -51,7 +51,7 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             engines/${{ matrix.engine }}/upstream/target
-          key: cargo-${{ matrix.engine }}-${{ steps.pin.outputs.sha }}-${{ hashFiles(format('engines/{0}/adapter/**', matrix.engine)) }}
+          key: cargo-${{ matrix.engine }}-${{ steps.pin.outputs.sha }}-${{ hashFiles(format('engines/{0}/adapter/**', matrix.engine), format('engines/{0}/overlay/**', matrix.engine)) }}
           restore-keys: |
             cargo-${{ matrix.engine }}-${{ steps.pin.outputs.sha }}-
             cargo-${{ matrix.engine }}-
@@ -141,7 +141,7 @@ jobs:
       fail-fast: false
       max-parallel: 20
       matrix:
-        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri"]') }}
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri","rkhead"]') }}
         suite: [css-break, css-page, css-gcpm, css-tables, css-flexbox, css-grid, css-inline, css-multicol, css-text, css-position, css-backgrounds, css-writing-modes, CSS2-1, CSS2-2, CSS2-3, CSS2-4]
     steps:
       - uses: actions/checkout@v4
@@ -186,7 +186,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri"]') }}
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri","rkhead"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -218,7 +218,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri"]') }}
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri","fulraikiri","rkhead"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

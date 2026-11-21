@@ -1,0 +1,26 @@
+[package]
+name = "adapter-rkhead"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "adapter-rkhead"
+path = "src/main.rs"
+
+[dependencies]
+fulgur-raikiri = { path = "../crates/fulgur-raikiri" }
+fulgur-core = { path = "../crates/fulgur-core" }
+raikiri-html = { workspace = true }
+raikiri-net = { workspace = true }
+raikiri-traits = { workspace = true }
+url = { workspace = true }
+log = "0.4"
+serde_json = "1"
+lopdf = "0.45"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+fontique = { version = "0.11.1", default-features = false, features = ["fontconfig-dlopen"] }

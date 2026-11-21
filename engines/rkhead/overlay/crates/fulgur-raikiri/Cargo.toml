@@ -1,0 +1,28 @@
+[package]
+name = "fulgur-raikiri"
+version = "0.41.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/fulgur-rs/fulgur"
+homepage = "https://github.com/fulgur-rs/fulgur"
+description = "Raikiri layout backend under development for fulgur"
+readme = "README.md"
+keywords = ["pdf", "html", "css", "converter"]
+categories = ["text-processing"]
+
+[dependencies]
+krilla = "0.7.0"
+tiny-skia = "0.12"
+skrifa = "0.47"
+fulgur-core = { version = "0.41.0", path = "../fulgur-core" }
+raikiri-html = { path = "../raikiri-html" }
+raikiri-net = { path = "../raikiri-net" }
+raikiri-traits = { path = "../raikiri-traits" }
+url = "2.5"
+percent-encoding = "2"
+flpdf = "0.10"
+tempfile = "3"
+
+[dev-dependencies]
+lopdf = "0.45"
