@@ -125,6 +125,82 @@ def pdf_structure(pdf_path):
     return None
 
 
+def evaluate(work, i, p, tag, path_name, res, dec, ref, kind, ref_err, src_bytes, src_sha, pix, struct_cases, no_oracle):
+    from PIL import Image
+    r = res.get(i)
+    if path_name == "fulgur" and r is None:
+        d = dec.get(i) or {}
+        r = {"status": "decode_" + d.get("status", "missing"), "message": d.get("message", "")}
+    r = r or {"status": "missing"}
+    cid = f"{path_name}:{i}"
+    if r["status"] != "ok":
+        if ref is None:
+            no_oracle.append({"id": cid, "kind": tag, "oracle_error": ref_err,
+                              "candidate": f'{r["status"]}: {r.get("message", "")}'})
+        else:
+            pix.append({"id": cid, "kind": tag, "pass": False, "error": f'{r["status"]}: {r.get("message", "")}'})
+        return
+    pdf = os.path.join(work, path_name, i + ".pdf")
+    out = os.path.join(work, "ras", f"{path_name}_{i}")
+    subprocess.run(["pdftoppm", "-r", "72", "-png", "-singlefile", pdf, out], capture_output=True, timeout=120)
+    got = None
+    try:
+        got = np.asarray(Image.open(out + ".png").convert("RGB")).astype(np.float64) / 255.0
+        ras_err = None
+    except Exception as e:  # noqa: BLE001
+        ras_err = f"rasterise: {e}"
+    if ref is None:
+        no_oracle.append({"id": cid, "kind": tag, "oracle_error": ref_err, "candidate": "ok (PDF written)",
+                          "rasterised": got is not None})
+    elif got is None:
+        pix.append({"id": cid, "kind": tag, "pass": False, "error": ras_err})
+    else:
+        exp = common.flatten_on_white(ref)
+        if got.shape != exp.shape:
+            case = {"id": cid, "kind": tag, "pass": False, "reason": "shape", "got": list(got.shape),
+                    "expected": list(exp.shape)}
+        elif kind == "cmyk":
+            de = common.de_stats(common.de2000_srgb(got, exp))
+            case = {"id": cid, "kind": tag, "pass": de["mean"] <= 5.0, "de2000_vs_naive": de}
+        else:
+            st = common.diff_stats(got, exp)
+            d16 = float((np.abs(got - exp).max(axis=-1) * 255 > 16).mean()) * 100
+            case = {"id": cid, "kind": tag, "pass": st["mean_abs"] <= 2.0 and d16 <= 1.0, **st,
+                    "pct_gt16": round(d16, 4)}
+        pix.append(case)
+    s = pdf_structure(pdf)
+    pdf_bytes = os.path.getsize(pdf)
+    sc = {"id": cid, "kind": tag, "pdf_bytes": pdf_bytes, "source_bytes": src_bytes,
+          "size_ratio": round(pdf_bytes / src_bytes, 3), "image": s}
+    checks = {}
+    if s is None:
+        checks["image_xobject_found"] = False
+    else:
+        filt = s["filter"]
+        is_dct = filt == "/DCTDecode" or (isinstance(filt, list) and "/DCTDecode" in filt)
+        if tag.startswith("jpeg"):
+            if path_name == "native":
+                checks["jpeg_dctdecode_passthrough"] = is_dct and s["stream_sha256"] == src_sha
+                if "cmyk" in tag or "ycck" in tag:
+                    want_inv = "non-inverted" not in tag
+                    has_inv = s["decode"] is not None and s["decode"][:2] == [1.0, 0.0]
+                    checks["cmyk_decode_array_matches_inversion"] = has_inv == want_inv
+            else:
+                checks["jpeg_reencoded_not_dct (fulgur path, informational)"] = not is_dct
+        if ref is not None:
+            has_alpha = bool(np.any(ref[..., 3] < 1.0))
+            if has_alpha:
+                checks["alpha_becomes_smask"] = s["smask"]
+            else:
+                checks["no_smask_for_opaque_image (informational)"] = not s["smask"]
+        if "16" in tag.split()[-1] and path_name == "native":
+            checks["16bit_kept"] = s["bits_per_component"] == 16
+    sc["checks"] = checks
+    gating = {k: v for k, v in checks.items() if "informational" not in k}
+    sc["pass"] = all(gating.values()) if gating else True
+    struct_cases.append(sc)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True)
@@ -154,79 +230,31 @@ def main():
                             for i in ids if (dec.get(i) or {}).get("status") == "ok"],
                            os.path.join(work, "fulgur_manifest.json"), os.path.join(work, "fulgur_batch.json"))
     pix, struct_cases = [], []
+    no_oracle, harness_errors = [], []
     for i, (p, tag) in ids.items():
-        ref, kind = reference(p, tag)
+        try:
+            ref, kind = reference(p, tag)
+            ref_err = None
+        except Exception as e:  # noqa: BLE001  (e.g. 12-bit JPEG: Pillow cannot decode it)
+            ref, kind, ref_err = None, None, f"{type(e).__name__}: {e}"[:200]
         src_bytes = os.path.getsize(p)
         src_sha = common.sha256_file(p)
         for path_name, res in (("native", nat), ("fulgur", ful)):
-            r = res.get(i)
-            if path_name == "fulgur" and r is None:
-                d = dec.get(i) or {}
-                r = {"status": "decode_" + d.get("status", "missing"), "message": d.get("message", "")}
-            r = r or {"status": "missing"}
             cid = f"{path_name}:{i}"
-            if r["status"] != "ok":
-                pix.append({"id": cid, "kind": tag, "pass": False, "error": f'{r["status"]}: {r.get("message", "")}'})
-                continue
-            pdf = os.path.join(work, path_name, i + ".pdf")
-            out = os.path.join(work, "ras", f"{path_name}_{i}")
-            subprocess.run(["pdftoppm", "-r", "72", "-png", "-singlefile", pdf, out], capture_output=True)
-            from PIL import Image
             try:
-                got = np.asarray(Image.open(out + ".png").convert("RGB")).astype(np.float64) / 255.0
-            except Exception as e:  # noqa: BLE001
-                pix.append({"id": cid, "kind": tag, "pass": False, "error": f"rasterise: {e}"})
-                continue
-            exp = common.flatten_on_white(ref)
-            if got.shape != exp.shape:
-                case = {"id": cid, "kind": tag, "pass": False, "reason": "shape", "got": list(got.shape),
-                        "expected": list(exp.shape)}
-            elif kind == "cmyk":
-                de = common.de_stats(common.de2000_srgb(got, exp))
-                case = {"id": cid, "kind": tag, "pass": de["mean"] <= 5.0, "de2000_vs_naive": de}
-            else:
-                st = common.diff_stats(got, exp)
-                d16 = float((np.abs(got - exp).max(axis=-1) * 255 > 16).mean()) * 100
-                case = {"id": cid, "kind": tag, "pass": st["mean_abs"] <= 2.0 and d16 <= 1.0, **st,
-                        "pct_gt16": round(d16, 4)}
-            pix.append(case)
-            s = pdf_structure(pdf)
-            pdf_bytes = os.path.getsize(pdf)
-            sc = {"id": cid, "kind": tag, "pdf_bytes": pdf_bytes, "source_bytes": src_bytes,
-                  "size_ratio": round(pdf_bytes / src_bytes, 3), "image": s}
-            checks = {}
-            if s is None:
-                checks["image_xobject_found"] = False
-            else:
-                filt = s["filter"]
-                is_dct = filt == "/DCTDecode" or (isinstance(filt, list) and "/DCTDecode" in filt)
-                if tag.startswith("jpeg"):
-                    if path_name == "native":
-                        checks["jpeg_dctdecode_passthrough"] = is_dct and s["stream_sha256"] == src_sha
-                        if "cmyk" in tag or "ycck" in tag:
-                            want_inv = "non-inverted" not in tag
-                            has_inv = s["decode"] is not None and s["decode"][:2] == [1.0, 0.0]
-                            checks["cmyk_decode_array_matches_inversion"] = has_inv == want_inv
-                    else:
-                        checks["jpeg_reencoded_not_dct (fulgur path, informational)"] = not is_dct
-                has_alpha = bool(np.any(ref[..., 3] < 1.0))
-                if has_alpha:
-                    checks["alpha_becomes_smask"] = s["smask"]
-                else:
-                    checks["no_smask_for_opaque_image (informational)"] = not s["smask"]
-                if "16" in tag.split()[-1] and path_name == "native":
-                    checks["16bit_kept"] = s["bits_per_component"] == 16
-            sc["checks"] = checks
-            gating = {k: v for k, v in checks.items() if "informational" not in k}
-            sc["pass"] = all(gating.values()) if gating else True
-            struct_cases.append(sc)
+                evaluate(work, i, p, tag, path_name, res, dec, ref, kind, ref_err, src_bytes, src_sha,
+                         pix, struct_cases, no_oracle)
+            except Exception as e:  # noqa: BLE001  one input must never abort the test
+                harness_errors.append({"id": cid, "kind": tag, "error": f"{type(e).__name__}: {e}"[:300]})
     common.write_result(os.path.join(args.results, "pdf_images.json"), "pdf_images", PIX_CRIT, pix,
-                        {"krilla": "0.7.0 (raster-images)", "paths": "native = Image::from_png/jpeg/gif/webp; fulgur = "
+                        {"no_oracle": no_oracle, "harness_errors": harness_errors,
+                         "krilla": "0.7.0 (raster-images)", "paths": "native = Image::from_png/jpeg/gif/webp; fulgur = "
                          "raikiri RGBA8 -> Image::from_custom (fulgur-raikiri paint/raster.rs:29-91)"})
     common.write_result(os.path.join(args.results, "pdf_images_structure.json"), "pdf_images_structure",
                         "native JPEG: /DCTDecode stream byte-identical to the source file; CMYK JPEG: /Decode [1 0 ...] "
                         "exactly when the file uses Adobe inversion; any image with alpha < 1: /SMask present; 16-bit PNG "
-                        "native: BitsPerComponent 16 (an SMask on a fully opaque image is reported, not gated)", struct_cases)
+                        "native: BitsPerComponent 16 (an SMask on a fully opaque image is reported, not gated)", struct_cases,
+                        {"harness_errors": harness_errors})
     return 0
 
 

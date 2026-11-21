@@ -29,11 +29,14 @@ def png_size(path):
 
 def rasterise(job):
     pdf, w, h, out_cairo, out_splash = job
-    r1 = subprocess.run(["pdftocairo", "-png", "-transp", "-singlefile", "-scale-to-x", str(w), "-scale-to-y", str(h),
-                         pdf, out_cairo], capture_output=True, timeout=120)
-    r2 = subprocess.run(["pdftoppm", "-png", "-singlefile", "-scale-to-x", str(w), "-scale-to-y", str(h),
-                         pdf, out_splash], capture_output=True, timeout=120)
-    return r1.returncode, r2.returncode
+    codes = []
+    for cmd in (["pdftocairo", "-png", "-transp", "-singlefile", "-scale-to-x", str(w), "-scale-to-y", str(h), pdf, out_cairo],
+                ["pdftoppm", "-png", "-singlefile", "-scale-to-x", str(w), "-scale-to-y", str(h), pdf, out_splash]):
+        try:
+            codes.append(subprocess.run(cmd, capture_output=True, timeout=120).returncode)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            codes.append(str(e)[:80])
+    return codes
 
 
 def compare(ref_path, cairo_png, splash_png):
@@ -66,6 +69,28 @@ def compare(ref_path, cairo_png, splash_png):
     return out
 
 
+def discover(tests, work):
+    """Test list from integration/render.rs. The harness runs in crates/resvg and calls render("tests/<cat>/...")
+    which reads format!("tests/{name}.svg"), so the files live in crates/resvg/tests/tests/<cat>/... ."""
+    render_rs = open(os.path.join(tests, "integration", "render.rs"), encoding="utf-8").read()
+    names = re.findall(r'render\("(tests/[^"]+)"\)', render_rs)
+    fonts = os.path.join(tests, "fonts")
+    cases, meta, missing = [], {}, []
+    for name in names:
+        p = name[len("tests/"):]
+        svg = os.path.join(tests, name + ".svg")
+        ref = os.path.join(tests, name + ".png")
+        if not (os.path.exists(svg) and os.path.exists(ref)):
+            missing.append(p)
+            continue
+        w, h = png_size(ref)
+        safe = p.replace("/", "__")
+        pdf = os.path.join(work, "pdf", safe + ".pdf")
+        cases.append({"id": p, "input": svg, "out": pdf, "args": [str(w), str(h), fonts]})
+        meta[p] = (ref, pdf, w, h, os.path.join(work, "cairo", safe), os.path.join(work, "splash", safe))
+    return cases, meta, missing
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tests", required=True, help="resvg checkout's crates/resvg/tests directory (v0.45.1)")
@@ -76,20 +101,9 @@ def main():
     args = ap.parse_args()
     work = os.path.abspath(args.work)
     tests = os.path.abspath(args.tests)
-    render_rs = open(os.path.join(tests, "integration", "render.rs"), encoding="utf-8").read()
-    paths = re.findall(r'render\("tests/([^"]+)"\)', render_rs)
-    fonts = os.path.join(tests, "fonts")
-    cases, meta = [], {}
-    for p in paths:
-        svg = os.path.join(tests, p + ".svg")
-        ref = os.path.join(tests, p + ".png")
-        if not (os.path.exists(svg) and os.path.exists(ref)):
-            continue
-        w, h = png_size(ref)
-        safe = p.replace("/", "__")
-        pdf = os.path.join(work, "pdf", safe + ".pdf")
-        cases.append({"id": p, "input": svg, "out": pdf, "args": [str(w), str(h), fonts]})
-        meta[p] = (ref, pdf, w, h, os.path.join(work, "cairo", safe), os.path.join(work, "splash", safe))
+    cases, meta, missing = discover(tests, work)
+    if not cases:
+        raise SystemExit(f"no SVG tests discovered under {tests} (missing inputs: {missing[:5]})")
     for d in ("pdf", "cairo", "splash"):
         os.makedirs(os.path.join(work, d), exist_ok=True)
     res = common.run_batch(args.svgpdf, "svg", cases, os.path.join(work, "svgpdf_manifest.json"),
@@ -120,6 +134,12 @@ def main():
             pc = coll.setdefault(cat, {"pass": 0, "total": 0})
             pc["total"] += 1
             pc["pass"] += int(case["pass"])
+    for p in missing:
+        cat = p.split("/")[0]
+        for coll, out in ((cat_s, strict), (cat_r, relaxed)):
+            out.append({"id": p, "category": cat, "pass": False, "error": "SVG or reference PNG missing from checkout"})
+            pc = coll.setdefault(cat, {"pass": 0, "total": 0})
+            pc["total"] += 1
     pv = subprocess.run(["pdftocairo", "-v"], capture_output=True, text=True)
     poppler = (pv.stderr or pv.stdout).strip().splitlines()[0] if (pv.stderr or pv.stdout) else "poppler"
     base = {"pipeline": "usvg 0.45.1 -> krilla-svg 0.7.0 (SvgSettings::default) -> krilla 0.7.0", "poppler": poppler,

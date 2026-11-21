@@ -276,15 +276,21 @@ function relative(fn, inner) {
   return new Color(spec.space, coords, alpha);
 }
 
+// Two sRGB mappings of the same evaluated colour:
+//   coords      : CSS Color 4 (legacy sRGB syntax clips, everything else css gamut mapping) - the spec answer
+//   clip_coords : per-channel clip of the unmapped sRGB value, what an engine without gamut mapping (and Chrome in
+//                 many cases) shows
+// in_gamut: the unmapped sRGB value lies within [0, 1] (1e-4 tolerance), so both mappings agree.
 function toSrgb(res) {
-  let c = Color.to(res.color, "srgb");
-  const coords = c.coords.map(v => v ?? 0);
-  c = new Color("srgb", coords, res.color.alpha ?? 0);
-  if (res.legacy) {
-    return { coords: coords.map(v => Math.min(1, Math.max(0, v))), alpha: c.alpha, mapping: "clip" };
-  }
-  const g = c.toGamut({ space: "srgb", method: "css" }).to("srgb");
-  return { coords: g.coords.map(v => Math.min(1, Math.max(0, v ?? 0))), alpha: c.alpha, mapping: "css-gamut-map" };
+  const c = Color.to(res.color, "srgb");
+  const raw = c.coords.map(v => v ?? 0);
+  const alpha = res.color.alpha ?? 0;
+  const inGamut = raw.every(v => v >= -1e-4 && v <= 1 + 1e-4);
+  const clip = raw.map(v => Math.min(1, Math.max(0, v)));
+  if (res.legacy) return { coords: clip, alpha, mapping: "clip", clip_coords: clip, in_gamut: inGamut };
+  const g = new Color("srgb", raw, alpha).toGamut({ space: "srgb", method: "css" }).to("srgb");
+  return { coords: g.coords.map(v => Math.min(1, Math.max(0, v ?? 0))), alpha, mapping: "css-gamut-map",
+           clip_coords: clip, in_gamut: inGamut };
 }
 
 function oracleFor(cs) {
@@ -298,7 +304,8 @@ function oracleFor(cs) {
   } catch (e) {
     o.colorjs_error = String(e.message || e).slice(0, 160);
   }
-  if (cs.expected) {
+  // WPT computed values for inputs with currentcolor depend on the colour the WPT page sets, not on CURRENT.
+  if (cs.expected && !/currentcolor/i.test(cs.input)) {
     try {
       const r = evalColor(cs.expected.replace(/currentcolor/gi, CURRENT));
       o.wpt = toSrgb(r);
@@ -317,73 +324,178 @@ function de(a, b) {
   return ca.deltaE2000(cb);
 }
 
+const SYSTEM_COLORS = new Set(["accentcolor", "accentcolortext", "activetext", "buttonborder", "buttonface", "buttontext",
+  "canvas", "canvastext", "field", "fieldtext", "graytext", "highlight", "highlighttext", "linktext", "mark", "marktext",
+  "selecteditem", "selecteditemtext", "visitedtext", "activeborder", "activecaption", "appworkspace", "background",
+  "buttonhighlight", "buttonshadow", "captiontext", "inactiveborder", "inactivecaption", "inactivecaptiontext",
+  "infobackground", "infotext", "menu", "menutext", "scrollbar", "threeddarkshadow", "threedface", "threedhighlight",
+  "threedlightshadow", "threedshadow", "window", "windowframe", "windowtext"]);
+const MIX_REL = /color-mix\(|\(\s*from\s/i;
+
+// Patterns that account for the oracle self-check disagreements (css_oracle_selfcheck.json): `none` components,
+// hsl/hwb interpolation or relative spaces (powerless hue, out-of-gamut conversion), lch/oklch (powerless thresholds).
+function gapPatterns(input) {
+  const s = input.toLowerCase();
+  const r = [];
+  if (/\bnone\b/.test(s)) r.push("none_component");
+  if (/color-mix\(\s*in\s+(hsl|hwb)\b/.test(s) || /\b(hsla?|hwb)\(\s*from\b/.test(s)) r.push("hsl_hwb_space");
+  if (/color-mix\(\s*in\s+(lch|oklch)\b/.test(s) || /\b(lch|oklch)\(\s*from\b/.test(s)) r.push("lch_oklch_space");
+  return r;
+}
+
+function colourVerdict(o, r, coordsKey) {
+  const ref = { coords: o.srgb[coordsKey], alpha: o.srgb.alpha };
+  const d = (ref.alpha === 0 && r.srgb.alpha === 0) ? 0 : de(ref, r.srgb);
+  const da = Math.abs((ref.alpha ?? 0) - (r.srgb.alpha ?? 0));
+  return { pass: d <= 1.0 && da <= 0.01, de: d, da };
+}
+
 function score(name, getResult) {
-  const cases = [], perCat = {};
-  let totalDe = [], noOracle = 0, excluded = 0;
+  const cases = [], perCat = {}, perGamut = {}, mixRel = { total: 0, pass: 0, failures: [] };
+  let totalDe = [], noOracle = 0, excluded = 0, passClip = 0;
   for (const cs of inputs.cases) {
     const o = oracles.get(cs.id);
     const r = getResult(cs);
     if (r && r.status === "skipped") { excluded++; continue; }
     const c = { id: cs.id, input: cs.input, category: cs.category, source: cs.source, expected_valid: cs.valid };
-    let pass;
+    const isSystem = SYSTEM_COLORS.has(cs.input.trim().toLowerCase());
+    let pass, pclip, bucket;
     if (!r) {
       c.candidate = "missing";
-      pass = false;
+      pass = pclip = false;
+      bucket = cs.valid ? "no_oracle_colour" : "invalid_input";
     } else if (!cs.valid) {
-      pass = r.status === "invalid";
+      pass = pclip = r.status === "invalid";
       c.candidate = r.status;
+      bucket = "invalid_input";
     } else if (r.status !== "ok") {
-      pass = false;
+      pass = pclip = false;
       c.candidate = r.status;
       if (r.error) c.error = r.error;
+      bucket = isSystem ? "system_colour" : (o.srgb ? (o.srgb.in_gamut ? "in_gamut" : "out_of_gamut") : "no_oracle_colour");
+    } else if (isSystem) {
+      // System colours are UA-defined: any accepted, opaque colour passes.
+      const opaque = r.srgb ? Math.abs((r.srgb.alpha ?? 1) - 1) <= 0.01 : null;
+      pass = pclip = opaque !== false;
+      c.colour_check = opaque === null ? "system colour accepted (opacity not verifiable)" : `system colour, opaque=${opaque}`;
+      if (r.srgb) c.candidate_srgb = r.srgb.coords.map(v => +v.toFixed(4));
+      bucket = "system_colour";
     } else if (!o.srgb || !r.srgb) {
-      pass = true;
+      pass = pclip = !!r.srgb;
       c.colour_check = r.srgb ? "no oracle colour (parse acceptance only)" : "candidate colour not evaluable";
-      if (!r.srgb) pass = false;
       noOracle += o.srgb ? 0 : 1;
       if (o.colorjs_error) c.oracle_error = o.colorjs_error;
       if (r.srgb) c.candidate_srgb = r.srgb.coords.map(v => +v.toFixed(4));
+      bucket = "no_oracle_colour";
     } else {
-      const d = (o.srgb.alpha === 0 && r.srgb.alpha === 0) ? 0 : de(o.srgb, r.srgb);
-      const da = Math.abs((o.srgb.alpha ?? 0) - (r.srgb.alpha ?? 0));
-      pass = d <= 1.0 && da <= 0.01;
-      c.de2000 = +d.toFixed(4);
-      c.alpha_diff = +da.toFixed(4);
+      const vm = colourVerdict(o, r, "coords");
+      const vc = colourVerdict(o, r, "clip_coords");
+      pass = vm.pass;
+      pclip = vc.pass;
+      c.de2000 = +vm.de.toFixed(4);
+      c.de2000_vs_clip_oracle = +vc.de.toFixed(4);
+      c.alpha_diff = +vm.da.toFixed(4);
+      c.in_gamut = o.srgb.in_gamut;
       c.oracle_srgb = o.srgb.coords.map(v => +v.toFixed(4));
+      c.oracle_srgb_clip = o.srgb.clip_coords.map(v => +v.toFixed(4));
       c.oracle_alpha = o.srgb.alpha;
       c.oracle_source = o.source;
       c.oracle_mapping = o.srgb.mapping;
       c.candidate_srgb = r.srgb.coords.map(v => +v.toFixed(4));
       c.candidate_alpha = r.srgb.alpha;
       if (o.input_eval) c.de2000_vs_colorjs_eval_of_input = +de(o.input_eval, r.srgb).toFixed(4);
-      totalDe.push(d);
+      totalDe.push(vm.de);
+      bucket = o.srgb.in_gamut ? "in_gamut" : "out_of_gamut";
     }
     c.pass = pass;
+    c.pass_clip_oracle = pclip;
+    c.gamut_bucket = bucket;
     cases.push(c);
-    const pc = perCat[cs.category] ??= { pass: 0, total: 0 };
+    passClip += pclip ? 1 : 0;
+    const pc = perCat[cs.category] ??= { pass: 0, pass_clip_oracle: 0, total: 0 };
     pc.total++;
     pc.pass += pass ? 1 : 0;
+    pc.pass_clip_oracle += pclip ? 1 : 0;
+    const pg = perGamut[bucket] ??= { pass: 0, pass_clip_oracle: 0, total: 0 };
+    pg.total++;
+    pg.pass += pass ? 1 : 0;
+    pg.pass_clip_oracle += pclip ? 1 : 0;
+    if (cs.valid && MIX_REL.test(cs.input)) {
+      mixRel.total++;
+      mixRel.pass += pass ? 1 : 0;
+      if (!pass) {
+        const fromWpt = !!(o.source && o.source.startsWith("WPT"));
+        const gp = gapPatterns(cs.input);
+        mixRel.failures.push({
+          id: cs.id, input: cs.input, candidate: c.candidate ?? "ok", de2000: c.de2000,
+          de2000_vs_clip_oracle: c.de2000_vs_clip_oracle, pass_clip_oracle: pclip,
+          reference: fromWpt ? "wpt_expected" : (o.srgb ? "colorjs_evaluator" : "none"),
+          selfcheck_agrees: selfcheck.has(cs.id) ? selfcheck.get(cs.id) : null, gap_patterns: gp,
+          in_known_oracle_gap: !fromWpt && !!o.srgb && gp.length > 0,
+        });
+      }
+    }
   }
   const npass = cases.filter(c => c.pass).length;
   totalDe.sort((x, y) => x - y);
+  const mf = mixRel.failures;
   const doc = {
     test: "css_color_" + name, pass: npass, fail: cases.length - npass, total: cases.length,
     pass_rate: cases.length ? npass / cases.length : null,
+    pass_clip_oracle: passClip, pass_rate_clip_oracle: cases.length ? passClip / cases.length : null,
     pass_criterion: "invalid inputs rejected; valid inputs accepted and, where colorjs.io (or the WPT computed value) gives a colour, " +
       "deltaE2000 <= 1.0 (colorjs deltaE2000, CIE Lab D50) and |alpha diff| <= 0.01 after CSS Color 4 sRGB mapping " +
-      "(clip for legacy sRGB syntax, css gamut mapping otherwise); currentcolor = " + CURRENT,
+      "(clip for legacy sRGB syntax, css gamut mapping otherwise). pass_clip_oracle: same, with per-channel sRGB clipping " +
+      "for every input. System colours pass when accepted as an opaque colour. currentcolor = " + CURRENT,
     per_category: perCat,
+    per_gamut: perGamut,
+    mix_relative: {
+      total: mixRel.total, pass: mixRel.pass, fail: mf.length,
+      fail_reference_wpt_expected: mf.filter(f => f.reference === "wpt_expected").length,
+      fail_reference_colorjs_evaluator: mf.filter(f => f.reference === "colorjs_evaluator").length,
+      fail_in_known_oracle_gap: mf.filter(f => f.in_known_oracle_gap).length,
+      fail_but_pass_with_clip_oracle: mf.filter(f => f.pass_clip_oracle).length,
+      in_known_oracle_gap_definition: "reference is the colorjs evaluator (no WPT expected value) and the input uses a " +
+        "pattern behind the self-check disagreements: none components, hsl/hwb or lch/oklch interpolation/relative spaces",
+      failures: mf.slice(0, 60),
+    },
     de2000_stats: totalDe.length ? { n: totalDe.length, mean: totalDe.reduce((a, b) => a + b, 0) / totalDe.length,
       p95: totalDe[Math.floor(0.95 * (totalDe.length - 1))], max: totalDe[totalDe.length - 1] } : null,
     cases_without_oracle_colour: noOracle,
     excluded_by_harness: excluded,
     first_failures: cases.filter(c => !c.pass).slice(0, 20),
+    first_failures_clip_oracle: cases.filter(c => !c.pass_clip_oracle).slice(0, 20),
   };
   fs.writeFileSync(path.join(outDir, `css_color_${name}.json`), JSON.stringify(doc, null, 1));
-  console.error(`${name}: ${npass}/${cases.length}`);
+  console.error(`${name}: ${npass}/${cases.length} (clip oracle ${passClip})`);
 }
 
 const oracles = new Map(inputs.cases.map(cs => [cs.id, oracleFor(cs)]));
+const selfcheck = new Map();
+
+// Self-check of the oracle: for WPT computed-value cases, the colour evaluated from the input must match the
+// colour of WPT's expected value.
+{
+  const rows = [];
+  let agree = 0, n = 0;
+  for (const cs of inputs.cases) {
+    if (cs.category !== "wpt-computed" || !cs.expected) continue;
+    const o = oracles.get(cs.id);
+    if (!o.input_eval || !o.wpt) continue;
+    n++;
+    const d = de(o.input_eval, o.wpt);
+    const da = Math.abs((o.input_eval.alpha ?? 0) - (o.wpt.alpha ?? 0));
+    const ok = (o.input_eval.alpha === 0 && o.wpt.alpha === 0) || (d <= 1.0 && da <= 0.01);
+    selfcheck.set(cs.id, ok);
+    if (ok) agree++; else rows.push({ input: cs.input, expected: cs.expected, de2000: +d.toFixed(3), alpha_diff: +da.toFixed(3), via: o.input_eval_source });
+  }
+  fs.writeFileSync(path.join(outDir, "css_oracle_selfcheck.json"), JSON.stringify({
+    test: "css_oracle_selfcheck", pass: agree, fail: n - agree, total: n, pass_rate: n ? agree / n : null,
+    pass_criterion: "diagnostic only (the WPT expected value is the reference for these cases): colorjs evaluation of the WPT input agrees with WPT's expected computed value (deltaE2000 <= 1, alpha <= 0.01)",
+    first_failures: rows.slice(0, 20), disagreements: rows }, null, 1));
+  console.error(`oracle self-check: ${agree}/${n}`);
+}
+
 
 // raikiri: rgba8 from the cascade
 const rk = JSON.parse(fs.readFileSync(raikiriPath, "utf8"));
@@ -415,24 +527,3 @@ for (const [name, cand] of Object.entries(libs)) {
   });
 }
 
-// Self-check of the oracle: for WPT computed-value cases, the colour evaluated from the input must match the
-// colour of WPT's expected value.
-{
-  const rows = [];
-  let agree = 0, n = 0;
-  for (const cs of inputs.cases) {
-    if (cs.category !== "wpt-computed" || !cs.expected) continue;
-    const o = oracles.get(cs.id);
-    if (!o.input_eval || !o.wpt) continue;
-    n++;
-    const d = de(o.input_eval, o.wpt);
-    const da = Math.abs((o.input_eval.alpha ?? 0) - (o.wpt.alpha ?? 0));
-    const ok = (o.input_eval.alpha === 0 && o.wpt.alpha === 0) || (d <= 1.0 && da <= 0.01);
-    if (ok) agree++; else rows.push({ input: cs.input, expected: cs.expected, de2000: +d.toFixed(3), alpha_diff: +da.toFixed(3), via: o.input_eval_source });
-  }
-  fs.writeFileSync(path.join(outDir, "css_oracle_selfcheck.json"), JSON.stringify({
-    test: "css_oracle_selfcheck", pass: agree, fail: n - agree, total: n, pass_rate: n ? agree / n : null,
-    pass_criterion: "diagnostic only (the WPT expected value is the reference for these cases): colorjs evaluation of the WPT input agrees with WPT's expected computed value (deltaE2000 <= 1, alpha <= 0.01)",
-    first_failures: rows.slice(0, 20) }, null, 1));
-  console.error(`oracle self-check: ${agree}/${n}`);
-}

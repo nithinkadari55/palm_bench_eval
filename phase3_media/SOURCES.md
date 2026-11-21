@@ -30,12 +30,12 @@ All downloads happen in `.github/workflows/phase3-media.yml` or in `scripts/fetc
 | tool | version / pin | licence | role |
 |---|---|---|---|
 | pypng | 0.20220715.0 (PyPI) | MIT | PNG oracle (pure Python, raw samples) |
-| Pillow | 13.0.0 (PyPI wheel; bundles libjpeg-turbo, libwebp, libavif, LittleCMS 2) | MIT-CMU | GIF/WebP-animation/JPEG sample oracle, LittleCMS (ImageCms) for CMYK and ICC |
+| Pillow | 13.0.0 (PyPI wheel; bundles libjpeg-turbo, libwebp, libavif, LittleCMS 2) | MIT-CMU | primary AVIF oracle (bundled libavif), GIF/WebP-animation/JPEG sample oracle, LittleCMS (ImageCms) for CMYK and ICC |
 | numpy | 2.5.5 | BSD-3-Clause | comparisons |
 | pypdf | 7.1.1 | BSD-3-Clause | PDF structure checks |
 | djpeg / cjpeg | Ubuntu 24.04 `libjpeg-turbo-progs` (2.1.5) | IJG / BSD-3-Clause / Zlib | JPEG oracle and variant encoder |
 | dwebp / gif2webp | Ubuntu 24.04 `webp` (libwebp 1.3.2) | BSD-3-Clause | WebP oracle; animated WebP generator |
-| avifdec | Ubuntu 24.04 `libavif-bin` (libavif 1.0.4) | BSD-2-Clause | AVIF oracle |
+| avifdec | Ubuntu 24.04 `libavif-bin` (libavif 1.0.4) | BSD-2-Clause | secondary AVIF oracle (reference only when Pillow cannot decode) |
 | libdav1d | Ubuntu 24.04 `libdav1d-dev` (1.4.1) | BSD-2-Clause | C AV1 decoder linked by image's `avif-native` |
 | pdftoppm / pdftocairo | Ubuntu 24.04 `poppler-utils` (24.02) | GPL-2.0-or-later (tool only, not linked) | PDF rasteriser |
 | colorjs.io | 0.7.1 (npm, `scripts/css/package.json`) | MIT | CSS colour oracle |

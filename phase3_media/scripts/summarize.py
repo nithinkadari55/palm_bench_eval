@@ -49,12 +49,20 @@ def main():
     a = res.get("avif_candidates")
     if a:
         md += ["## AVIF decoder candidates", "", f"oracle: {a.get('oracle', '')}", "",
-               "| candidate | crate | licence | pure Rust | build | status | pass/total | safety failures |",
-               "|---|---|---|---|---|---|---:|---|"]
+               f"oracle agreement (avifdec vs Pillow): {a.get('oracle_agreement', '')}", "",
+               "| candidate | crate | licence | pure Rust | build | status | pass/total (tolerant) | strict pass | failure classes | safety failures |",
+               "|---|---|---|---|---|---|---:|---:|---|---|"]
         for k, v in a.get("candidates", {}).items():
             md.append(f"| {k} | {v.get('crate', '')} | {v.get('licence', '')} | {v.get('pure_rust', '')} | {v.get('build', '')} | "
-                      f"{v.get('status', '')} | {v.get('pass', '-')}/{v.get('total', '-')} | {v.get('safety_failures', '')} |")
+                      f"{v.get('status', '')} | {v.get('pass', '-')}/{v.get('total', '-')} | {v.get('strict_pass', '-')} | "
+                      f"{v.get('failure_classes', '')} | {v.get('safety_failures', '')} |")
         md.append("")
+        pa = a.get("pairwise_agreement") or {}
+        if pa:
+            md += ["| candidate pair | both decoded | agree (tolerant) | size mismatch |", "|---|---:|---:|---:|"]
+            for k, v in pa.items():
+                md.append(f"| {k} | {v['both_decoded']} | {v['agree_tolerant']} | {v['size_mismatch']} |")
+            md.append("")
         for k in a.get("candidates", {}):
             r = res.get(f"avif_{k}")
             if r and r.get("per_tag"):
@@ -84,6 +92,20 @@ def main():
             md.append(f"deltaE2000 over compared cases ({name}): n={st.get('n')}, mean={st.get('mean')}, p95={st.get('p95')}, max={st.get('max')}")
             md.append("")
             cat_table(md, name + " per category", r["per_category"])
+            md.append(f"clip-oracle variant: {r.get('pass_clip_oracle')}/{r.get('total')}")
+            md.append("")
+            if r.get("per_gamut"):
+                md += ["| gamut bucket | pass (CSS gamut mapping) | pass (clip oracle) | total |", "|---|---:|---:|---:|"]
+                for k, v in r["per_gamut"].items():
+                    md.append(f"| {k} | {v['pass']} | {v['pass_clip_oracle']} | {v['total']} |")
+                md.append("")
+            mr = r.get("mix_relative")
+            if mr:
+                md.append(f"color-mix / relative: {mr['pass']}/{mr['total']} pass; failures: {mr['fail']} "
+                          f"(reference WPT expected {mr['fail_reference_wpt_expected']}, colorjs evaluator "
+                          f"{mr['fail_reference_colorjs_evaluator']}, in known oracle gap {mr['fail_in_known_oracle_gap']}, "
+                          f"pass with clip oracle {mr['fail_but_pass_with_clip_oracle']})")
+                md.append("")
     for name in ("svg_resvg_0.48.1", "svg_resvg_0.45.1", "svg_krilla_pdf_strict", "svg_krilla_pdf_relaxed"):
         r = res.get(name)
         if r and r.get("per_category"):
