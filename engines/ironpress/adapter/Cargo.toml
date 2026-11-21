@@ -1,0 +1,12 @@
+[package]
+name = "adapter-ironpress"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "adapter-ironpress"
+path = "src/main.rs"
+
+[dependencies]
+ironpress = { path = ".." }

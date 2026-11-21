@@ -1,0 +1,23 @@
+{
+  "name": "ironpress",
+  "repo": "https://github.com/gastongouron/ironpress",
+  "sha": "dadedd4cd7fcaf257c526f0c480ce526f861de8a",
+  "commit_date": "2026-10-22T00:00:35+02:00",
+  "license": "MIT",
+  "output": "pdf",
+  "supports": {
+    "page_rule": true,
+    "default_page_size_config": true,
+    "local_resources": "partial",
+    "system_fonts": true,
+    "font_face": true,
+    "geometry": false,
+    "diagnostics": false,
+    "javascript": false,
+    "svg": true,
+    "images": "partial"
+  },
+  "apt_packages": ["fontconfig"],
+  "toolchain": "stable",
+  "notes": "Adapter uses HtmlConverter::new().page_size(PageSize::new(W*0.75,H*0.75)).margin(Margin::uniform(M*0.75)).base_path(<input dir>).resource_root(\"/\").convert(html) (src/lib.rs:262,357,363,432,444,550; src/types.rs:30,264); PageSize/Margin are in PDF points. Sanitization left at the engine default (true, src/lib.rs:369): it removes <script>, <iframe>, <object>, <embed>, <form> (with content), on* attributes and the literal text 'javascript:' (src/security/sanitizer.rs:22-56). page_rule: universal @page size and margin-* override the builder values (src/lib.rs:611-644; src/parser/css/page.rs:11); size only overrides when both width and height resolve; :first/:left/:right/named pages handled per page (src/lib.rs:718-738); margin boxes rendered. default_page_size_config: builder page_size/margin. local_resources partial: <style> @import, CSS url(), <img src>, SVG <image href>, @font-face src resolve against base_path (src/lib.rs:562-602,983-1045; src/security/sanitizer.rs:65-87; src/parser/css/imports.rs:90); resource_root(\"/\") widens the default authorization boundary (base_path) so ../ references are not denied (src/security/resources/mod.rs:129-152); <link rel=stylesheet> is NOT loaded, only <style> text is collected (src/parser/html/mod.rs:116-135); file:// URLs are rejected as unsupported scheme (src/security/resources/mod.rs:174,240); default build has no 'remote' feature, so no network. system_fonts: fontdb Database::load_system_fonts (src/system_fonts.rs:598-604), CJK fallback prefers Noto Sans CJK JP/SC (src/system_fonts.rs:441-492), emoji fallback from system (src/system_fonts.rs:496-512), fc-match subprocess fallback for unknown requested families (src/system_fonts.rs:799-806), plus compiled-in Liberation and Noto Sans/Arabic assets (src/system_fonts.rs:518-572, assets/). font-packs/ holds only sources.lock and licenses; packs are optional, released separately, and not needed when system Noto CJK/emoji fonts are installed (font-packs/README.md). font_face: src/lib.rs:741-755,983-1045 (resolve_font_face_source at 1013) (url and local() sources, unicode-range, size-adjust). geometry: layout module is pub(crate) (src/lib.rs:90); the public API (cli, error, font_pack, types, HtmlConverter, wasm) exposes no page or box positions; features are only async/remote/wasm (Cargo.toml [features]); adapter writes {\"unsupported\":true}. diagnostics: no warnings API; IronpressError is the only error channel (src/error.rs:3); adapter writes {\"unsupported\":true}. javascript: none; scripts stripped by the sanitizer. svg: inline <svg> and SVG images via resvg 0.48 (Cargo.toml; src/parser/svg.rs; src/layout/images/svg.rs). images partial: raster decoding via image crate with only jpeg,png features (Cargo.toml); data: URIs and local files. Page count printed on stdout is parsed from the /Type /Pages /Count entry (src/render/pdf/writer_output.rs:518). Toolchain: edition 2024, rust-version 1.88 (Cargo.toml); no rust-toolchain.toml; upstream CI uses 1.88.0 and stable. Workspace: upstream Cargo.toml already has [workspace] members = [bindings/c, bindings/python, bindings/ruby/ext/ironpress]; build.sh appends adapter-ironpress."
+}

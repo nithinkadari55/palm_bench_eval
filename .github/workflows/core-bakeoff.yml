@@ -1,0 +1,262 @@
+name: core-bakeoff
+
+on:
+  workflow_dispatch:
+    inputs:
+      engines:
+        description: "JSON list of engines"
+        default: '["takumi","fulgur","ironpress","blitz","raikiri"]'
+  push:
+    branches: [main]
+    paths: ["engines/**", "harness/**", ".github/workflows/core-bakeoff.yml"]
+
+permissions:
+  contents: read
+
+env:
+  WPT_SHA: 9986bb32c9e97707eff870ab284ebc5cc7ae8d21
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read engine pin
+        id: pin
+        run: |
+          echo "repo=$(jq -r .repo engines/${{ matrix.engine }}/ENGINE.json)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(jq -r .sha engines/${{ matrix.engine }}/ENGINE.json)" >> "$GITHUB_OUTPUT"
+      - name: Clone upstream at pinned SHA
+        run: |
+          d=engines/${{ matrix.engine }}/upstream
+          git init -q "$d"
+          git -C "$d" remote add origin "${{ steps.pin.outputs.repo }}"
+          git -C "$d" fetch -q --depth 1 origin "${{ steps.pin.outputs.sha }}"
+          git -C "$d" checkout -q FETCH_HEAD
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            engines/${{ matrix.engine }}/upstream/target
+          key: cargo-${{ matrix.engine }}-${{ steps.pin.outputs.sha }}-${{ hashFiles(format('engines/{0}/adapter/**', matrix.engine)) }}
+          restore-keys: |
+            cargo-${{ matrix.engine }}-${{ steps.pin.outputs.sha }}-
+            cargo-${{ matrix.engine }}-
+      - name: Build adapter
+        id: b
+        run: |
+          rustup update stable --no-self-update >/dev/null 2>&1 || true
+          start=$(date +%s)
+          set +e
+          bash engines/${{ matrix.engine }}/build.sh 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          end=$(date +%s)
+          bin=engines/${{ matrix.engine }}/bin/adapter-${{ matrix.engine }}
+          if [ $rc -eq 0 ] && [ -x "$bin" ]; then st=OK; mb=$(du -m "$bin" | cut -f1); else st=FAILED; mb=null; fi
+          mkdir -p out
+          printf '{"engine":"%s","status":"%s","build_s":%s,"binary_mb":%s,"sha":"%s"}\n' \
+            "${{ matrix.engine }}" "$st" "$((end-start))" "$mb" "${{ steps.pin.outputs.sha }}" > out/build-${{ matrix.engine }}.json
+          cp build.log out/build-${{ matrix.engine }}.log
+          cat out/build-${{ matrix.engine }}.json
+          [ "$st" = OK ]
+      - name: Smoke test
+        run: |
+          printf '<!DOCTYPE html><html><body><h1>Hello SMOKE</h1><p style="color:red">ok</p></body></html>' > /tmp/smoke.html
+          sudo apt-get install -y -qq fonts-dejavu-core poppler-utils >/dev/null
+          b=engines/${{ matrix.engine }}/bin/adapter-${{ matrix.engine }}
+          out=/tmp/smoke.$(jq -r .output engines/${{ matrix.engine }}/ENGINE.json)
+          "$b" render /tmp/smoke.html "$out" --page-width-px 800 --page-height-px 600 --margin-px 0 --geometry /tmp/g.json --diagnostics /tmp/d.json
+          ls -la "$out"; head -c 400 /tmp/g.json; echo; head -c 400 /tmp/d.json; echo
+          case "$out" in *.pdf) pdftotext "$out" - | head -5;; esac
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.engine }}
+          path: |
+            out/
+            engines/${{ matrix.engine }}/bin/
+            engines/${{ matrix.engine }}/ENGINE.json
+          if-no-files-found: warn
+
+  wpt-prep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: wc
+        with:
+          path: wpt
+          key: wpt-${{ env.WPT_SHA }}-${{ hashFiles('harness/wpt_prep.py') }}-v1
+      - name: Sparse checkout WPT
+        if: steps.wc.outputs.cache-hit != 'true'
+        run: |
+          git init -q wpt
+          git -C wpt remote add origin https://github.com/web-platform-tests/wpt.git
+          git -C wpt config core.sparseCheckout true
+          git -C wpt sparse-checkout set --no-cone /css/ /fonts/ /images/ /resources/ /common/ /media/
+          git -C wpt fetch -q --depth 1 --filter=blob:none origin "$WPT_SHA"
+          git -C wpt checkout -q FETCH_HEAD
+          rm -rf wpt/.git
+          du -sh wpt
+      - name: Rewrite + manifest
+        if: steps.wc.outputs.cache-hit != 'true'
+        run: |
+          python3 harness/wpt_prep.py --wpt wpt --suites "$(cat harness/wpt_suites.txt | tr '\n' ',')" --out wpt/manifest.json
+      - run: python3 -c "import json;m=json.load(open('wpt/manifest.json'));import collections;print(collections.Counter((t['suite'],t['kind']) for t in m))"
+
+  datasets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: dc
+        with:
+          path: datasets
+          key: datasets-${{ hashFiles('harness/fetch_datasets.py') }}-v1
+      - if: steps.dc.outputs.cache-hit != 'true'
+        run: python3 harness/fetch_datasets.py --out datasets --d2c 120 --websight 120
+
+  wpt:
+    needs: [build, wpt-prep]
+    if: always() && needs.wpt-prep.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri"]') }}
+        suite: [css-break, css-page, css-gcpm, css-tables, css-flexbox, css-grid, css-inline, css-multicol, css-text, css-position, css-backgrounds, css-writing-modes, CSS2-1, CSS2-2, CSS2-3, CSS2-4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        id: dl
+        continue-on-error: true
+        with:
+          name: build-${{ matrix.engine }}
+      - name: Check engine binary
+        id: have
+        run: |
+          b=engines/${{ matrix.engine }}/bin/adapter-${{ matrix.engine }}
+          if [ -f "$b" ]; then chmod +x "$b"; echo ok=true >> "$GITHUB_OUTPUT"; else echo ok=false >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/restore@v4
+        if: steps.have.outputs.ok == 'true'
+        with:
+          path: wpt
+          key: wpt-${{ env.WPT_SHA }}-${{ hashFiles('harness/wpt_prep.py') }}-v1
+          fail-on-cache-miss: true
+      - name: Runtime deps
+        if: steps.have.outputs.ok == 'true'
+        run: bash harness/ci_runtime_deps.sh ${{ matrix.engine }} wpt
+      - name: Run WPT
+        if: steps.have.outputs.ok == 'true'
+        run: |
+          s="${{ matrix.suite }}"
+          case "$s" in CSS2-*) suite=css/CSS2; shard="${s#CSS2-}/4";; *) suite="css/$s"; shard=1/1;; esac
+          python3 harness/wpt_run.py --engine ${{ matrix.engine }} --wpt wpt --manifest wpt/manifest.json \
+            --suite "$suite" --shard "$shard" --out results/wpt-${{ matrix.engine }}-${{ matrix.suite }}.json
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.have.outputs.ok == 'true'
+        with:
+          name: wpt-${{ matrix.engine }}-${{ matrix.suite }}
+          path: results/
+          if-no-files-found: warn
+
+  corpus:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: build-${{ matrix.engine }}
+      - id: have
+        run: |
+          b=engines/${{ matrix.engine }}/bin/adapter-${{ matrix.engine }}
+          if [ -f "$b" ]; then chmod +x "$b"; echo ok=true >> "$GITHUB_OUTPUT"; else echo ok=false >> "$GITHUB_OUTPUT"; fi
+      - if: steps.have.outputs.ok == 'true'
+        run: bash harness/ci_runtime_deps.sh ${{ matrix.engine }}
+      - if: steps.have.outputs.ok == 'true'
+        run: python3 harness/corpus_run.py --engine ${{ matrix.engine }} --out results/corpus-${{ matrix.engine }}.json
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.have.outputs.ok == 'true'
+        with:
+          name: corpus-${{ matrix.engine }}
+          path: |
+            results/
+            /tmp/corpus/*.pdf
+          if-no-files-found: warn
+
+  fidelity:
+    needs: [build, datasets]
+    if: always() && needs.datasets.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(github.event.inputs.engines || '["takumi","fulgur","ironpress","blitz","raikiri"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: build-${{ matrix.engine }}
+      - id: have
+        run: |
+          b=engines/${{ matrix.engine }}/bin/adapter-${{ matrix.engine }}
+          if [ -f "$b" ]; then chmod +x "$b"; echo ok=true >> "$GITHUB_OUTPUT"; else echo ok=false >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/restore@v4
+        if: steps.have.outputs.ok == 'true'
+        with:
+          path: datasets
+          key: datasets-${{ hashFiles('harness/fetch_datasets.py') }}-v1
+          fail-on-cache-miss: true
+      - if: steps.have.outputs.ok == 'true'
+        run: bash harness/ci_runtime_deps.sh ${{ matrix.engine }}
+      - if: steps.have.outputs.ok == 'true'
+        run: python3 harness/fidelity_run.py --engine ${{ matrix.engine }} --data datasets --out results/fidelity-${{ matrix.engine }}.json
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.have.outputs.ok == 'true'
+        with:
+          name: fidelity-${{ matrix.engine }}
+          path: results/
+          if-no-files-found: warn
+
+  report:
+    needs: [build, wpt, corpus, fidelity]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - run: |
+          python3 harness/aggregate.py --results all --out-md summary.md --out-json summary.json
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bakeoff-summary
+          path: |
+            summary.md
+            summary.json

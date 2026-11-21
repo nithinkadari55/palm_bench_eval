@@ -1,0 +1,29 @@
+{
+  "name": "blitz",
+  "repo": "https://github.com/DioxusLabs/blitz",
+  "sha": "6636442d30ebe29289ebfbb8a3bf53ddfd640a0e",
+  "commit_date": "2026-11-20T15:42:33Z",
+  "license": "MIT OR Apache-2.0",
+  "output": "png",
+  "supports": {
+    "page_rule": false,
+    "default_page_size_config": true,
+    "local_resources": true,
+    "system_fonts": true,
+    "font_face": true,
+    "geometry": true,
+    "diagnostics": false,
+    "javascript": false,
+    "svg": true,
+    "images": true
+  },
+  "features": {
+    "blitz-dom": ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"],
+    "blitz-paint": ["default (svg)"],
+    "anyrender_vello_cpu": [],
+    "image": ["png", "jpeg", "gif", "webp"]
+  },
+  "apt_packages": ["libfontconfig1-dev", "pkg-config"],
+  "toolchain": "stable",
+  "notes": "Raster-only (no PDF backend): renders one W x H CSS px viewport at scale 1 on white to PNG; --margin-px is ignored. Renderer: anyrender_vello_cpu 0.19.0 VelloCpuImageRenderer (CPU only, no multithreading feature, as in the WPT runner). page_rule=false: no pagination/@page. default_page_size_config=true means the viewport size is taken from --page-width-px/--page-height-px (blitz_traits::shell::Viewport::new, packages/blitz-traits/src/shell.rs:103). Setup mirrors wpt/runner/src/test_runners/mod.rs:293-344 (DocumentConfig + HtmlDocument::from_html + resolve/pump loop) and wpt/runner/src/renderer.rs:411-422 / examples/screenshot.rs:108-133 (white fill + blitz_paint::paint_scene into VelloCpuImageRenderer). blitz-dom feature set copied from wpt/runner/Cargo.toml:16 (floats and writing-mode are non-default, packages/blitz-dom/Cargo.toml features). image codecs png/jpeg/gif/webp added by the adapter because blitz-dom depends on image with default-features=false (Cargo.toml workspace image entry; decoding at packages/blitz-dom/src/net.rs:617-650 via image::ImageReader::with_guessed_format, SVG fallback); all codec crates are already in upstream Cargo.lock. local_resources: adapter-provided synchronous NetProvider (blitz_traits::net::NetProvider, packages/blitz-traits/src/net.rs:19) reading file:// and data: URLs, modeled on wpt/runner/src/net_provider.rs; base URL is the input file's file:// URL; resolve loop repeats until no new fetches and BaseDocument::has_pending_critical_resources() is false (packages/blitz-dom/src/document.rs:1403, resolve drains loaded resources at packages/blitz-dom/src/resolve.rs:46). system_fonts: blitz-dom system-fonts feature -> parley/system (fontique + fontconfig); BaseDocument::new builds the font collection with system_fonts=true (packages/blitz-dom/src/document.rs:409-432); needs libfontconfig1-dev as in upstream .github/workflows/wpt.yml. font_face: @font-face via FontFaceHandler (packages/blitz-dom/src/net.rs:307-360), WOFF/WOFF2 via woff feature (wuff). geometry: element boxes from BaseDocument::get_client_bounding_rect (packages/blitz-dom/src/document.rs:2491), border box in CSS px relative to viewport, DOM pre-order over Node.children, node label tag#id.class. diagnostics=false: Stylo error_reporter is hard-coded None (packages/blitz-dom/src/net.rs:173, net.rs:286, document.rs:1310-1326), adapter writes {\"unsupported\":true}. javascript=false: blitz-vibey-script (Boa) exists in the workspace but is not used by the adapter. svg: inline <svg> and SVG images via blitz-dom svg + blitz-paint svg (anyrender_svg/usvg). No rust-toolchain.toml upstream; workspace rust-version 1.91.0, edition 2024."
+}
