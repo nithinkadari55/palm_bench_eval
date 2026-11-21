@@ -1,0 +1,25 @@
+[package]
+name = "p2-parley13"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "fallback"
+path = "src/bin/fallback.rs"
+
+[[bin]]
+name = "parley_layout"
+path = "src/bin/parley_layout.rs"
+
+[[bin]]
+name = "bidi_parley"
+path = "src/bin/bidi_parley.rs"
+
+[dependencies]
+parley = { version = "=0.13.0", features = ["complex-scripts"] }
+parley_engine = "=0.13.0"
+fontique = "=0.13.0"
+skrifa = "=0.50.0"
+unicode-bidi = "=0.3.18"
+serde_json = "=1.0.154"

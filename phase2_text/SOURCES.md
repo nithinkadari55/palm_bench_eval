@@ -1,0 +1,18 @@
+# Sources downloaded in CI
+
+All downloads happen in `.github/workflows/phase2-text.yml` or in the scripts it calls. Nothing listed here is committed or redistributed.
+
+| what | URL | pinned | licence | used by |
+|---|---|---|---|---|
+| UDHR translations (XML) | https://raw.githubusercontent.com/eric-muller/udhr/e6a1b6f8cb048fba115d6b81bab47875a4eca0d8/data/udhr/udhr_<code>.xml | commit e6a1b6f8 | The text is the United Nations (OHCHR) translations of the Universal Declaration of Human Rights. The markup is from the "UDHR in XML" project (formerly hosted by the Unicode Consortium until January 2024; https://unicode.org/udhr/ now points to OHCHR). The repository has no LICENSE file, so it is used only as a CI test corpus. | shaping, fallback, parley_layout |
+| Emoji ZWJ sequences 16.0 | https://www.unicode.org/Public/emoji/16.0/emoji-zwj-sequences.txt | Emoji 16.0 (matches noble-updates fonts-noto-color-emoji 2.047) | Unicode License v3, https://www.unicode.org/license.txt | shaping, fallback, parley_layout |
+| LineBreakTest.txt | https://www.unicode.org/Public/{15.1.0,17.0.0,18.0.0}/ucd/auxiliary/LineBreakTest.txt | versioned paths | Unicode License v3 | segmentation |
+| WordBreakTest.txt | https://www.unicode.org/Public/{17.0.0,18.0.0}/ucd/auxiliary/WordBreakTest.txt | versioned paths | Unicode License v3 | segmentation |
+| GraphemeBreakTest.txt | https://www.unicode.org/Public/{17.0.0,18.0.0}/ucd/auxiliary/GraphemeBreakTest.txt | versioned paths | Unicode License v3 | segmentation |
+| BidiTest.txt, BidiCharacterTest.txt | https://www.unicode.org/Public/{16.0.0,17.0.0,18.0.0}/ucd/ | versioned paths | Unicode License v3 | bidi, bidi_parley |
+| HarfBuzz 15.2.0 release tarball | https://github.com/harfbuzz/harfbuzz/releases/download/15.2.0/harfbuzz-15.2.0.tar.xz | sha256 e2ec49090744383cdbe7df808c1cedaafba06a97be8dc4211fe546ba585f12cb | MIT ("Old MIT"), https://github.com/harfbuzz/harfbuzz/blob/main/COPYING | shaping (matched-version oracle `hb-shape`) |
+| HarfRust source | https://github.com/harfbuzz/harfrust.git, tag 0.16.1 | SHA afca863838d515241d45ab0f49b1bafc03a9b93e (verified) | MIT | harfrust_suite (its dev-dependencies, including harfbuzz_rs from git rev 66dae27, are fetched by cargo) |
+| hypher source (TeX patterns) | https://github.com/typst/hypher.git | commit d81cc506416bffef2a75ee2dc969d4b41bc36613 (= crates.io 0.1.8 `.cargo_vcs_info.json`) | Code: MIT OR Apache-2.0. Patterns: per file (LPPL, MPL, MIT, BSD, GPL, ...), inventoried in `hyphenation_licences.json` | hyphenation |
+| Rust crates | https://static.crates.io via cargo (crates.io index) | `=` pins in each `crates/*/Cargo.toml` | harfrust MIT; icu_segmenter/icu_properties Unicode-3.0; unicode-bidi MIT OR Apache-2.0; hypher MIT OR Apache-2.0; wuff MIT; fontique/parley/parley_engine Apache-2.0 OR MIT; skrifa MIT OR Apache-2.0; serde_json MIT OR Apache-2.0 | all Rust tests |
+| Python packages | https://pypi.org (pip) | fonttools==4.68.0, brotli==1.2.1, pyphen==0.18.1 | fonttools MIT; brotli MIT; pyphen GPL-2.0+/LGPL-2.1+/MPL-1.1 (CI-only reference, not shipped); pyphen's bundled hyph_*.dic files carry their own LibreOffice licences | shape_oracle (TTC face lookup), woff, hyphenation |
+| Ubuntu packages | Ubuntu 24.04 archive (apt on the GitHub runner) | versions recorded per run in `results/apt-packages-<group>.txt` | fonts-noto-* SIL OFL 1.1; fonts-dejavu-core Bitstream Vera/DejaVu licence; fonts-liberation SIL OFL 1.1; fonts-cantarell SIL OFL 1.1; fonts-inter / fonts-inter-variable SIL OFL 1.1; fonts-urw-base35 AGPL-3.0 with font exception; libharfbuzz-bin MIT; hunspell-* dictionaries: per package as stated in /usr/share/doc/<package>/copyright, used only as word lists in CI | shaping, woff, fallback, parley_layout, hyphenation |

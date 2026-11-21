@@ -1,0 +1,19 @@
+[package]
+name = "p2-icu24"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "segmentation"
+path = "src/bin/segmentation.rs"
+
+[[bin]]
+name = "bidi"
+path = "src/bin/bidi.rs"
+
+[dependencies]
+icu_segmenter = { version = "=2.4.0", features = ["unstable"] }
+icu_properties = { version = "=2.4.0", features = ["unicode_bidi"] }
+unicode-bidi = "=0.3.18"
+serde_json = "=1.0.154"

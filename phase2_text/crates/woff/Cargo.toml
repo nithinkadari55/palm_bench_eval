@@ -1,0 +1,13 @@
+[package]
+name = "p2-woff"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "woff"
+path = "src/main.rs"
+
+[dependencies]
+wuff = "=0.2.10"
+serde_json = "=1.0.154"

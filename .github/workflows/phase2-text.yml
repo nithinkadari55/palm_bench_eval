@@ -1,0 +1,302 @@
+name: phase2-text
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "phase2_text/**"
+      - ".github/workflows/phase2-text.yml"
+
+concurrency:
+  group: phase2-text-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  P2: phase2_text
+  HARFRUST_TAG: "0.16.1"
+  HARFRUST_SHA: afca863838d515241d45ab0f49b1bafc03a9b93e
+  HARFBUZZ_VERSION: "15.2.0"
+  HARFBUZZ_SHA256: e2ec49090744383cdbe7df808c1cedaafba06a97be8dc4211fe546ba585f12cb
+  HYPHER_SHA: d81cc506416bffef2a75ee2dc969d4b41bc36613
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [shaping, harfrust-suite, icu24, hyphenation, woff, parley]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/phase2_text/target
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+          mkdir -p "$P2/results" "$P2/data" "$P2/work" "$P2/locks"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            phase2_text/target
+          key: p2-${{ matrix.group }}-${{ hashFiles('phase2_text/crates/**/Cargo.toml') }}
+          restore-keys: |
+            p2-${{ matrix.group }}-
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update -qq
+          case "${{ matrix.group }}" in
+            shaping)
+              sudo apt-get install -y -qq libharfbuzz-bin fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core meson ninja-build libglib2.0-dev pkg-config ;;
+            hyphenation)
+              sudo apt-get install -y -qq hunspell-en-us hunspell-de-de hunspell-fr hunspell-es hunspell-it hunspell-pt-pt hunspell-nl hunspell-ru ;;
+            woff)
+              sudo apt-get install -y -qq fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core fonts-liberation fonts-cantarell fonts-inter fonts-inter-variable fonts-urw-base35 ;;
+            parley)
+              sudo apt-get install -y -qq libfontconfig1-dev pkg-config fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core
+              fc-cache -f >/dev/null ;;
+          esac
+          dpkg-query -W -f='${Package} ${Version}\n' 'fonts-*' 'hunspell-*' libharfbuzz-bin 2>/dev/null > "$P2/results/apt-packages-${{ matrix.group }}.txt" || true
+
+      - name: Install Python packages
+        if: matrix.group == 'shaping' || matrix.group == 'hyphenation' || matrix.group == 'woff'
+        run: python -m pip install --quiet -r "$P2/requirements.txt"
+
+      - name: Fetch text corpus (UDHR + Unicode emoji ZWJ sequences)
+        if: matrix.group == 'shaping' || matrix.group == 'parley'
+        run: python -I "$P2/scripts/fetch_corpus.py" --out "$P2/data/corpus.json"
+
+      - name: Fetch Unicode conformance files
+        if: matrix.group == 'icu24' || matrix.group == 'parley'
+        run: |
+          set -e
+          get() { mkdir -p "$P2/data/ucd/$1"; curl -fsSL --retry 5 -o "$P2/data/ucd/$1/$(basename "$2")" "https://www.unicode.org/Public/$1/ucd/$2"; }
+          for v in 15.1.0 17.0.0 18.0.0; do get $v auxiliary/LineBreakTest.txt; done
+          for v in 17.0.0 18.0.0; do get $v auxiliary/WordBreakTest.txt; get $v auxiliary/GraphemeBreakTest.txt; done
+          for v in 16.0.0 17.0.0 18.0.0; do get $v BidiTest.txt; get $v BidiCharacterTest.txt; done
+          head -n 1 "$P2"/data/ucd/*/*.txt
+
+      # ---------------- 1. shaping ----------------
+      - name: "shaping: build HarfBuzz ${{ env.HARFBUZZ_VERSION }} hb-shape (version matched by HarfRust)"
+        id: hbbuild
+        if: matrix.group == 'shaping'
+        continue-on-error: true
+        run: |
+          set -e
+          cd "$P2/work"
+          curl -fsSL --retry 5 -o hb.tar.xz "https://github.com/harfbuzz/harfbuzz/releases/download/${HARFBUZZ_VERSION}/harfbuzz-${HARFBUZZ_VERSION}.tar.xz"
+          echo "${HARFBUZZ_SHA256}  hb.tar.xz" | sha256sum -c -
+          tar xf hb.tar.xz
+          cd "harfbuzz-${HARFBUZZ_VERSION}"
+          meson setup build --buildtype=release -Dtests=disabled -Ddocs=disabled -Dintrospection=disabled \
+            -Dcairo=disabled -Dchafa=disabled -Dfreetype=disabled -Dicu=disabled -Dglib=enabled -Dgobject=disabled -Dgpu_demo=disabled
+          meson compile -C build hb-shape
+          ./build/util/hb-shape --version
+
+      - name: "shaping: oracle from apt hb-shape"
+        if: matrix.group == 'shaping'
+        continue-on-error: true
+        run: python -I "$P2/scripts/shape_oracle.py" --hb-shape /usr/bin/hb-shape --label apt --corpus "$P2/data/corpus.json" --out "$P2/data/oracle_apt.json"
+
+      - name: "shaping: oracle from matched hb-shape"
+        if: matrix.group == 'shaping' && steps.hbbuild.outcome == 'success'
+        continue-on-error: true
+        run: python -I "$P2/scripts/shape_oracle.py" --hb-shape "$P2/work/harfbuzz-${HARFBUZZ_VERSION}/build/util/hb-shape" --label hb-matched --corpus "$P2/data/corpus.json" --out "$P2/data/oracle_hb-matched.json"
+
+      - name: "shaping: build HarfRust harness"
+        if: matrix.group == 'shaping'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P2/crates/shaping/Cargo.toml"
+          cp "$P2/crates/shaping/Cargo.lock" "$P2/locks/shaping.Cargo.lock"
+
+      - name: "shaping: HarfRust vs apt hb-shape"
+        if: matrix.group == 'shaping'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/shaping "$P2/data/oracle_apt.json" "$P2/results/shaping_apt.json"
+
+      - name: "shaping: HarfRust vs matched hb-shape"
+        if: matrix.group == 'shaping'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/shaping "$P2/data/oracle_hb-matched.json" "$P2/results/shaping_hb-matched.json"
+
+      # ---------------- 2. HarfRust test suite ----------------
+      - name: "harfrust-suite: clone harfrust ${{ env.HARFRUST_TAG }}"
+        if: matrix.group == 'harfrust-suite'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$P2/work/harfrust"
+          git -C "$P2/work/harfrust" remote add origin https://github.com/harfbuzz/harfrust.git
+          git -C "$P2/work/harfrust" fetch -q --depth 1 origin "refs/tags/${HARFRUST_TAG}"
+          git -C "$P2/work/harfrust" checkout -q FETCH_HEAD
+          test "$(git -C "$P2/work/harfrust" rev-parse HEAD)" = "$HARFRUST_SHA"
+
+      - name: "harfrust-suite: cargo test"
+        if: matrix.group == 'harfrust-suite'
+        continue-on-error: true
+        run: |
+          python -I "$P2/scripts/harfrust_suite.py" --repo "$P2/work/harfrust" --tag "$HARFRUST_TAG" --sha "$HARFRUST_SHA" \
+            --out "$P2/results/harfrust_suite.json" --log "$P2/results/harfrust_suite.log"
+          cp "$P2/work/harfrust/Cargo.lock" "$P2/locks/harfrust-upstream.Cargo.lock" || true
+
+      # ---------------- 3 + 4. segmentation and bidi (ICU4X 2.4 / unicode-bidi) ----------------
+      - name: "icu24: build"
+        if: matrix.group == 'icu24'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P2/crates/icu24/Cargo.toml"
+          cp "$P2/crates/icu24/Cargo.lock" "$P2/locks/icu24.Cargo.lock"
+
+      - name: "segmentation: icu_segmenter vs Line/Word/GraphemeBreakTest"
+        if: matrix.group == 'icu24'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/segmentation "$P2/data/ucd" "$P2/results/segmentation.json"
+
+      - name: "bidi: unicode-bidi vs BidiTest/BidiCharacterTest"
+        if: matrix.group == 'icu24'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/bidi "$P2/data/ucd" "$P2/results/bidi.json"
+
+      # ---------------- 5. hyphenation ----------------
+      - name: "hyphenation: clone hypher patterns at crate commit"
+        if: matrix.group == 'hyphenation'
+        continue-on-error: true
+        run: |
+          set -e
+          git init -q "$P2/work/hypher"
+          git -C "$P2/work/hypher" remote add origin https://github.com/typst/hypher.git
+          git -C "$P2/work/hypher" fetch -q --depth 1 origin "$HYPHER_SHA"
+          git -C "$P2/work/hypher" checkout -q FETCH_HEAD
+
+      - name: "hyphenation: licence inventory + pyphen references"
+        if: matrix.group == 'hyphenation'
+        continue-on-error: true
+        run: |
+          python -I "$P2/scripts/hyph_reference.py" --hypher-repo "$P2/work/hypher" --hypher-sha "$HYPHER_SHA" \
+            --out-ref "$P2/data/hyph_ref.json" --out-licences "$P2/results/hyphenation_licences.json"
+
+      - name: "hyphenation: build"
+        if: matrix.group == 'hyphenation'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P2/crates/hyph/Cargo.toml"
+          cp "$P2/crates/hyph/Cargo.lock" "$P2/locks/hyph.Cargo.lock"
+
+      - name: "hyphenation: hypher vs pyphen"
+        if: matrix.group == 'hyphenation'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/hyphenation "$P2/data/hyph_ref.json" "$P2/results/hyphenation.json"
+
+      # ---------------- 6. WOFF / WOFF2 ----------------
+      - name: "woff: select fonts and encode with fontTools"
+        if: matrix.group == 'woff'
+        continue-on-error: true
+        run: python -I "$P2/scripts/woff_prepare.py" --work "$P2/work/woff" --out "$P2/data/woff_manifest.json"
+
+      - name: "woff: build"
+        if: matrix.group == 'woff'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P2/crates/woff/Cargo.toml"
+          cp "$P2/crates/woff/Cargo.lock" "$P2/locks/woff.Cargo.lock"
+
+      - name: "woff: decode with wuff"
+        if: matrix.group == 'woff'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/woff roundtrip "$P2/data/woff_manifest.json" "$P2/work/woff_decoded" "$P2/data/wuff_roundtrip.json"
+
+      - name: "woff: robustness (truncated / bit-flipped / garbage)"
+        if: matrix.group == 'woff'
+        continue-on-error: true
+        run: |
+          ulimit -v 6000000
+          "$CARGO_TARGET_DIR/release/woff" robust "$P2/data/woff_manifest.json" "$P2/work/woff_mut" "$P2/results/woff_robustness.json"
+
+      - name: "woff: compare decoded fonts with originals (fontTools)"
+        if: matrix.group == 'woff'
+        continue-on-error: true
+        run: |
+          python -I "$P2/scripts/woff_compare.py" --manifest "$P2/data/woff_manifest.json" --wuff "$P2/data/wuff_roundtrip.json" \
+            --robustness "$P2/results/woff_robustness.json" --out "$P2/results/woff.json"
+
+      # ---------------- 7 + 8 + Parley bidi ----------------
+      - name: "parley: build"
+        if: matrix.group == 'parley'
+        continue-on-error: true
+        run: |
+          cargo build --release --manifest-path "$P2/crates/parley13/Cargo.toml"
+          cp "$P2/crates/parley13/Cargo.lock" "$P2/locks/parley13.Cargo.lock"
+
+      - name: "fallback: fontique + skrifa coverage"
+        if: matrix.group == 'parley'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/fallback "$P2/data/corpus.json" "$P2/results/fallback.json"
+
+      - name: "parley: line layout sanity + timing"
+        if: matrix.group == 'parley'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/parley_layout "$P2/data/corpus.json" "$P2/results/parley_layout.json"
+
+      - name: "bidi: Parley resolver vs BidiTest/BidiCharacterTest"
+        if: matrix.group == 'parley'
+        continue-on-error: true
+        run: $CARGO_TARGET_DIR/release/bidi_parley "$P2/data/ucd" "$P2/results/bidi_parley.json"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-results-${{ matrix.group }}
+          path: |
+            phase2_text/results/
+          if-no-files-found: warn
+
+      - name: Upload Cargo.lock files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-cargo-lock-${{ matrix.group }}
+          path: phase2_text/locks/
+          if-no-files-found: ignore
+
+  summary:
+    needs: test
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase2-results-*
+          path: phase2_text/results
+          merge-multiple: true
+      - name: Write step summary
+        run: |
+          ls -la phase2_text/results || true
+          python3 -I phase2_text/scripts/summarize.py --results phase2_text/results --out "$GITHUB_STEP_SUMMARY"
+      - name: Upload combined results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-results-all
+          path: phase2_text/results/*.json
+          if-no-files-found: warn

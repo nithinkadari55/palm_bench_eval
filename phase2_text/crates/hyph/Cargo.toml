@@ -1,0 +1,13 @@
+[package]
+name = "p2-hyph"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "hyphenation"
+path = "src/main.rs"
+
+[dependencies]
+hypher = "=0.1.8"
+serde_json = "=1.0.154"
