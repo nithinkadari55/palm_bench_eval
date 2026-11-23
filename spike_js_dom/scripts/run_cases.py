@@ -24,6 +24,7 @@ import pdfcheck  # noqa: E402
 
 
 def run(binary, html, work, page, timeout):
+    binary, html, work = os.path.abspath(binary), os.path.abspath(html), os.path.abspath(work)
     os.makedirs(work, exist_ok=True)
     out = {k: os.path.join(work, v) for k, v in (
         ("pdf", "out.pdf"), ("geometry", "geometry.json"), ("diagnostics", "diagnostics.json"),
