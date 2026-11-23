@@ -103,6 +103,20 @@ jobs:
       - name: Runtime deps
         if: steps.have.outputs.ok == 'true'
         run: bash harness/ci_runtime_deps.sh ${{ matrix.engine }}
+      - name: Chrome-equivalent generic font mapping (Chrome Linux defaults Arial/Times New Roman/Monospace)
+        if: steps.have.outputs.ok == 'true'
+        run: |
+          sudo tee /etc/fonts/local.conf >/dev/null <<'EOF'
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          <fontconfig>
+            <alias binding="strong"><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>
+            <alias binding="strong"><family>serif</family><prefer><family>Liberation Serif</family></prefer></alias>
+            <alias binding="strong"><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>
+          </fontconfig>
+          EOF
+          sudo fc-cache -f >/dev/null
+          fc-match sans-serif; fc-match serif; fc-match monospace
       - name: Metrics vs Chrome
         if: steps.have.outputs.ok == 'true'
         run: |
