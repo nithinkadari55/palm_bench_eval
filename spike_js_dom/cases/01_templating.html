@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Templating</title>
+<style>
+  body { font-family: sans-serif; font-size: 14px; }
+  table { border-collapse: collapse; margin-bottom: 16px; }
+  th, td { border: 1px solid #333; padding: 4px 10px; }
+  td.num { text-align: right; }
+  #cards { display: flex; flex-wrap: wrap; gap: 8px; }
+  .card { width: 200px; padding: 8px; border: 1px solid #888; }
+  .card.hot { background: #ffcdd2; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1 id="title">Report</h1>
+<table id="orders">
+  <thead><tr><th>Name</th><th>Qty</th><th>Price</th></tr></thead>
+  <tbody><tr id="stale"><td>Remove Me</td><td>0</td><td>0</td></tr></tbody>
+</table>
+<div id="cards"></div>
+<p id="summary"></p>
+<script>
+  const rows = JSON.parse('[{"name":"Widget Alpha","qty":3,"price":9.5},{"name":"Widget Beta","qty":5,"price":2.25},{"name":"Ghost Item","qty":0,"price":1},{"name":"Widget Gamma","qty":7,"price":4}]');
+  const tbody = document.querySelector('#orders tbody');
+  let total = 0;
+  rows.forEach((r) => {
+    const tr = document.createElement('tr');
+    [r.name, String(r.qty), r.price.toFixed(2)].forEach((v, i) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (i > 0) td.classList.add('num');
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+    total += r.qty * r.price;
+  });
+  tbody.removeChild(document.getElementById('stale'));
+  const foot = document.createElement('tr');
+  const label = document.createElement('td');
+  label.setAttribute('colspan', '2');
+  label.appendChild(document.createTextNode('TOTAL'));
+  const sum = document.createElement('td');
+  sum.className = 'num';
+  sum.textContent = total.toFixed(2);
+  foot.append(label, sum);
+  tbody.insertBefore(foot, null);
+  const first = tbody.firstElementChild;
+  const header = document.createElement('tr');
+  header.innerHTML = '<td colspan="3">Orders (JSON)</td>';
+  tbody.insertBefore(header, first);
+
+  const cards = document.getElementById('cards');
+  rows.forEach((r, i) => {
+    const c = document.createElement('div');
+    c.classList.add('card');
+    c.classList.toggle('hot', r.qty > 4);
+    c.classList.toggle('hidden', r.qty === 0);
+    c.setAttribute('data-sku', 'SKU-' + (100 + i));
+    const h = document.createElement('h3');
+    h.appendChild(document.createTextNode('Card ' + r.name));
+    const p = document.createElement('p');
+    p.textContent = c.getAttribute('data-sku') + (c.classList.contains('hot') ? ' hot' : ' cool');
+    c.append(h, p);
+    cards.appendChild(c);
+  });
+  document.getElementById('title').textContent = 'Report: ' + rows.filter((r) => r.qty > 0).length + ' items';
+  document.getElementById('summary').textContent =
+    'visible cards = ' + document.querySelectorAll('#cards .card:not(.hidden)').length +
+    ', hot = ' + document.getElementsByClassName('hot').length;
+</script>
+</body>
+</html>

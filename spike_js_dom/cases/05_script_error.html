@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Script errors</title>
+<style>body { font-family: sans-serif; font-size: 14px; }</style>
+</head>
+<body>
+<h1>Error isolation</h1>
+<p id="a">first pending</p>
+<p id="b">third pending</p>
+<p id="c">timer pending</p>
+<p id="d">listener pending</p>
+<script>
+  document.getElementById('a').textContent = 'First script ran';
+</script>
+<script>
+  const missing = document.getElementById('does-not-exist');
+  missing.textContent = 'NEVER SHOWN';
+  document.body.appendChild(document.createTextNode('NEVER APPENDED'));
+</script>
+<script>
+  function broken( {
+</script>
+<script>
+  document.getElementById('b').textContent = 'Third script ran';
+  console.error('custom diagnostic 42');
+  setTimeout(function () { throw new Error('timer kaboom'); }, 5);
+  setTimeout(function () { document.getElementById('c').textContent = 'Timer after error ran'; }, 10);
+  document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('d').textContent = 'Listener ran';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+name: spike-js-dom
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "spike_js_dom/**"
+      - ".github/workflows/spike-js-dom.yml"
+
+concurrency:
+  group: spike-js-dom-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SP: spike_js_dom
+  NODE_VERSION: "24.22.1"
+  TZ: UTC
+  LC_ALL: C.UTF-8
+
+jobs:
+  spike:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/spike_js_dom/work/target
+      RES: ${{ github.workspace }}/spike_js_dom/results
+    steps:
+      - uses: actions/checkout@v4
+        continue-on-error: true
+
+      - uses: actions/setup-node@v4
+        continue-on-error: true
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Runtime and build dependencies (rkhead apt packages, fonts, poppler, GNU time, Python PDF tools)
+        continue-on-error: true
+        run: |
+          mkdir -p "$RES"
+          bash harness/ci_runtime_deps.sh rkhead
+          rustup --version; nproc; free -m; df -h . | tail -1
+
+      - uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            spike_js_dom/work/target
+          key: spike-js-dom-${{ hashFiles('engines/rkhead/ENGINE.json', 'engines/rkhead/build.sh', 'engines/rkhead/overlay/**', 'spike_js_dom/crates/**/Cargo.toml') }}
+          restore-keys: |
+            spike-js-dom-
+
+      - name: Prepare raikiri workspace (rkhead pin + fulgur crates + overlay + spike crates)
+        id: prepare
+        continue-on-error: true
+        run: bash "$SP/build.sh" prepare
+
+      - name: "Build spike-rkjs (rquickjs 0.14.0 binding)"
+        id: build_rkjs
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          set +e
+          bash "$SP/build.sh" build spike-rkjs 2>&1 | tee "$RES/build_spike-rkjs.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          end=$(date +%s)
+          b="$SP/bin/spike-rkjs"
+          if [ $rc -eq 0 ] && [ -x "$b" ]; then st=OK; mb=$(du -m "$b" | cut -f1); else st=FAILED; mb=null; fi
+          printf '{"crate":"spike-rkjs","status":"%s","build_s":%s,"binary_mb":%s}\n' "$st" "$((end-start))" "$mb" > "$RES/build_spike-rkjs.json"
+          cat "$RES/build_spike-rkjs.json"
+          [ "$st" = OK ]
+
+      - name: "Build spike-rkboa (raikiri-js on Boa, same host pipeline)"
+        id: build_rkboa
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          set +e
+          bash "$SP/build.sh" build spike-rkboa 2>&1 | tee "$RES/build_spike-rkboa.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          end=$(date +%s)
+          b="$SP/bin/spike-rkboa"
+          if [ $rc -eq 0 ] && [ -x "$b" ]; then st=OK; mb=$(du -m "$b" | cut -f1); else st=FAILED; mb=null; fi
+          printf '{"crate":"spike-rkboa","status":"%s","build_s":%s,"binary_mb":%s}\n' "$st" "$((end-start))" "$mb" > "$RES/build_spike-rkboa.json"
+          cat "$RES/build_spike-rkboa.json"
+          [ "$st" = OK ]
+
+      - name: Save Cargo.lock
+        if: always()
+        continue-on-error: true
+        run: cp "$SP/work/upstream/Cargo.lock" "$RES/Cargo.lock"
+
+      - name: Phase 5 bundles (npm ci + phase5_js/js/build.mjs) for the ECharts case
+        id: bundles
+        continue-on-error: true
+        working-directory: phase5_js/js
+        run: |
+          npm ci --no-audit --no-fund
+          node build.mjs
+          mkdir -p "$GITHUB_WORKSPACE/$SP/work/assets"
+          cp dist/shims.js dist/echarts.js dist/bundles.json "$GITHUB_WORKSPACE/$SP/work/assets/"
+          ls -la "$GITHUB_WORKSPACE/$SP/work/assets"
+
+      - name: Phase 5 LLM-style DOM cases as pages
+        continue-on-error: true
+        run: node "$SP/scripts/gen_phase5_cases.mjs" phase5_js/js/cases/dom.mjs "$SP/work/phase5_pages"
+
+      - name: Prelude logic check on Node (natives emulated over linkedom)
+        continue-on-error: true
+        run: |
+          node "$SP/scripts/prelude_mock.mjs" phase5_js/js/node_modules/linkedom \
+            "$SP"/cases/01_templating.html "$SP"/cases/02_innerhtml.html "$SP"/cases/04_layout_query.html "$SP"/cases/05_script_error.html \
+            "$SP"/work/phase5_pages/*.html > "$RES/prelude_mock.jsonl"
+          python3 -c "import json,sys; [print(d['case'], d['logs']) for d in map(json.loads, open(sys.argv[1]))]" "$RES/prelude_mock.jsonl"
+
+      - name: "Cases on spike-rkjs (rquickjs)"
+        continue-on-error: true
+        run: |
+          mkdir -p "$SP/work/assets"
+          python3 "$SP/scripts/run_cases.py" --engine rkjs --bin "$SP/bin/spike-rkjs" --cases "$SP/cases" \
+            --assets "$SP/work/assets" --phase5 "$SP/work/phase5_pages" --work "$SP/work/runs" --out "$RES/results_rkjs.json"
+
+      - name: "Cases on spike-rkboa (raikiri-js / Boa)"
+        continue-on-error: true
+        run: |
+          mkdir -p "$SP/work/assets"
+          python3 "$SP/scripts/run_cases.py" --engine rkboa --bin "$SP/bin/spike-rkboa" --cases "$SP/cases" \
+            --assets "$SP/work/assets" --phase5 "$SP/work/phase5_pages" --work "$SP/work/runs" --out "$RES/results_rkboa.json"
+
+      - name: DOM API usage (phase 5 cases + WebSight sample)
+        continue-on-error: true
+        run: python3 "$SP/scripts/api_usage.py" --root . --cache "$SP/work/websight_cache" --out "$RES/api_usage.json" --batches 30
+
+      - name: Summary
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 "$SP/scripts/summarize.py" --results "$RES" --out-md "$RES/summary.md" --out-json "$RES/summary.json"
+          cat "$RES/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect run outputs
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p "$RES/runs"
+          if [ -d "$SP/work/runs" ]; then
+            (cd "$SP/work/runs" && find . -type f \( -name 'out.pdf' -o -name '*.json' -o -name 'final.html' -o -name 'stderr.txt' \) -print0 | \
+              xargs -0 -I{} cp --parents {} "$RES/runs/")
+          fi
+
+      - name: Upload results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-js-dom-results
+          path: spike_js_dom/results/
+          if-no-files-found: warn

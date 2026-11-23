@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>innerHTML</title>
+<style>
+  body { font-family: sans-serif; font-size: 14px; }
+  li.it { margin: 2px 0; }
+</style>
+</head>
+<body>
+<h1>Injected content</h1>
+<div id="list">placeholder text</div>
+<div id="sec"></div>
+<p id="count"></p>
+<p id="echo"></p>
+<script>
+  const items = ['Apples', 'Bananas & Kiwis', 'Cherries'];
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  document.getElementById('list').innerHTML =
+    '<ul>' + items.map((x, i) => `<li class="it">${i + 1}. ${esc(x)}</li>`).join('') + '</ul>';
+  document.getElementById('sec').innerHTML = `
+    <section style="background:#1e88e5;color:#ffffff;padding:16px;width:320px">
+      <h2 style="margin:0">Styled Section</h2>
+      <p style="margin:8px 0 0">Injected <b>bold</b> &amp; styled</p>
+    </section>`;
+  const lis = document.querySelectorAll('#list li.it');
+  document.getElementById('count').textContent = 'li count = ' + lis.length + ', last = ' + lis[lis.length - 1].textContent;
+  const markup = document.getElementById('list').innerHTML;
+  document.getElementById('echo').textContent = 'roundtrip ' + (markup.indexOf('<li class="it">2. Bananas &amp; Kiwis</li>') >= 0 ? 'ok' : 'bad: ' + markup);
+</script>
+</body>
+</html>

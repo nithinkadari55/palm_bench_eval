@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Layout query</title>
+<style>
+  body { font-family: sans-serif; font-size: 14px; margin: 0; }
+  #box { background: #2e7d32; height: 40px; box-sizing: content-box; }
+  #box2 { background: #6a1b9a; height: 30px; margin-top: 12px; }
+  #row { display: flex; width: 600px; margin-top: 12px; }
+  #row > div { flex: 1; height: 24px; }
+  #f1 { background: #ef6c00; }
+  #f2 { background: #0277bd; flex: 2 !important; }
+  p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<div id="box"></div>
+<div id="box2"></div>
+<div id="row"><div id="f1"></div><div id="f2"></div></div>
+<p id="out1">pending</p>
+<p id="out2">pending</p>
+<p id="out3">pending</p>
+<script>
+  const box = document.getElementById('box');
+  box.style.width = '317px';
+  box.style.setProperty('padding-left', '13px');
+  box.style.borderRight = '7px solid #000000';
+  const r = box.getBoundingClientRect();
+  document.getElementById('out1').textContent = 'W1=' + r.width.toFixed(1) + ' OW1=' + box.offsetWidth + ' H1=' + r.height.toFixed(1);
+
+  const box2 = document.getElementById('box2');
+  box2.style.width = '45%';
+  const w2 = box2.getBoundingClientRect().width;
+  document.getElementById('out2').textContent = 'W2=' + w2.toFixed(1);
+
+  // Real flex layout: f2 has flex 2 in a 600px row, so f1 is a third of the row.
+  const w3 = document.getElementById('f1').getBoundingClientRect().width;
+  const w3again = document.getElementById('f1').offsetWidth;
+  document.getElementById('out3').textContent = 'W3=' + w3.toFixed(1) + ' OW3=' + w3again;
+</script>
+</body>
+</html>

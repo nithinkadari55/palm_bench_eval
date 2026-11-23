@@ -1,0 +1,28 @@
+[package]
+name = "spike-rkjs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "spike-rkjs"
+path = "src/main.rs"
+
+# Built inside the raikiri workspace at the rkhead pin (see spike_js_dom/build.sh), next to
+# crates/fulgur-core and crates/fulgur-raikiri copied from fulgur bd6222fe.
+[dependencies]
+fulgur-raikiri = { path = "../crates/fulgur-raikiri" }
+fulgur-core = { path = "../crates/fulgur-core" }
+raikiri-dom = { workspace = true }
+raikiri-html = { workspace = true }
+raikiri-net = { workspace = true }
+raikiri-style = { workspace = true }
+raikiri-traits = { workspace = true }
+url = { workspace = true }
+log = "0.4"
+serde_json = "1"
+# Same pin and features as phase5_js/crates/qjs (QuickJS-NG 0fdea21, no quickjs-libc).
+rquickjs = { version = "=0.14.0", default-features = false, features = ["std"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+fontique = { version = "0.11.1", default-features = false, features = ["fontconfig-dlopen"] }

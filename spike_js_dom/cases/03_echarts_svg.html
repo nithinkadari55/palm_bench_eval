@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ECharts SSR SVG</title>
+<style>
+  body { font-family: sans-serif; font-size: 14px; }
+  #chart { width: 600px; height: 360px; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<h1>Chart inserted from script</h1>
+<div id="chart"></div>
+<p id="meta">chart not rendered</p>
+<!-- shims.js and echarts.js are phase5_js/js/dist bundles copied next to this page by the runner. -->
+<script src="shims.js"></script>
+<script>
+  if (globalThis.__p5) {
+    var reg = globalThis.__p5.register;
+    globalThis.__p5.register = function (l) { globalThis.__echartsLib = l; reg(l); };
+  }
+</script>
+<script src="echarts.js"></script>
+<script src="echarts_option.js"></script>
+<script src="echarts_fallback.js"></script>
+<script>
+  var lib = globalThis.__echartsLib;
+  var svg = null;
+  var source = 'none';
+  if (lib) {
+    svg = lib.run({ option: globalThis.__CHART_OPTION, width: 600, height: 360 });
+    source = 'bundle';
+  } else if (globalThis.__ECHARTS_FALLBACK_SVG) {
+    svg = globalThis.__ECHARTS_FALLBACK_SVG;
+    source = 'fallback';
+  }
+  if (svg) document.getElementById('chart').innerHTML = svg;
+  document.getElementById('meta').textContent =
+    'chart source: ' + source + ', svg paths = ' + document.querySelectorAll('#chart svg path').length;
+</script>
+</body>
+</html>
