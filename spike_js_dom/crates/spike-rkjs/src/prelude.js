@@ -730,8 +730,11 @@
   if (typeof g.queueMicrotask !== 'function') {
     g.queueMicrotask = function (fn) { Promise.resolve().then(fn); };
   }
-  if (!g.performance) g.performance = {};
-  g.performance.now = function () { return vt; };
+  var perf = {};
+  try { Object.defineProperty(perf, 'now', { value: function () { return vt; }, enumerable: true }); } catch (e) {}
+  try { Object.defineProperty(g, 'performance', { value: perf, writable: true, configurable: true }); } catch (e) {
+    try { Object.defineProperty(g.performance, 'now', { value: function () { return vt; }, configurable: true }); } catch (e2) {}
+  }
 
   // Host entry points (called from Rust after the page scripts).
   g.__rk = {
