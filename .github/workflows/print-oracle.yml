@@ -1,0 +1,146 @@
+name: print-oracle
+
+on:
+  workflow_dispatch:
+    inputs:
+      engines:
+        description: "JSON list of engines"
+        default: '["rkhead","takumi","fulraikiri","fulgur","ironpress"]'
+      websight:
+        description: "Number of WebSight v0.1 pages"
+        default: "100"
+  push:
+    paths: ["harness/print_oracle/**", ".github/workflows/print-oracle.yml"]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: print-oracle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: po_cache
+          key: po-cache-${{ hashFiles('harness/print_oracle/fetch_public.py') }}-v1
+      - name: Runtime deps (same fonts as the engine jobs)
+        run: bash harness/ci_runtime_deps.sh rkhead
+      - name: Chrome (test oracle only)
+        run: |
+          if ! command -v google-chrome >/dev/null 2>&1; then
+            wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+            sudo apt-get install -y -qq /tmp/chrome.deb >/dev/null
+          fi
+          command -v google-chrome
+          google-chrome --version
+          fc-match sans-serif; fc-match serif; fc-list | wc -l
+      - name: Build corpus
+        run: python3 harness/print_oracle/build_corpus.py --out corpus --cache po_cache --websight "${{ github.event.inputs.websight || '100' }}"
+      - name: Render corpus with Chrome
+        run: CHROME_BIN=google-chrome python3 harness/print_oracle/chrome_oracle.py --corpus corpus --work /tmp/po-chrome
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: po-corpus
+          path: corpus/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: po-meta
+          path: |
+            corpus/manifest.json
+            corpus/chrome_meta.json
+          if-no-files-found: warn
+
+  engine:
+    needs: [corpus]
+    if: always() && needs.corpus.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(github.event.inputs.engines || '["rkhead","takumi","fulraikiri","fulgur","ironpress"]') }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: po-corpus
+          path: corpus
+      - name: Download engine binary (latest successful core-bakeoff on main)
+        id: have
+        run: |
+          e=${{ matrix.engine }}
+          id=$(gh run list -R ${{ github.repository }} --workflow core-bakeoff.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          echo "core-bakeoff run: ${id:-none}"
+          ok=false
+          mkdir -p /tmp/eng results
+          if [ -n "$id" ] && gh run download "$id" -R ${{ github.repository }} -n "build-$e" -D /tmp/eng; then
+            b=$(find /tmp/eng -type f -name "adapter-$e" | head -1)
+            j=$(find /tmp/eng -type f -path "*engines/$e/ENGINE.json" | head -1)
+            if [ -n "$b" ]; then
+              mkdir -p "engines/$e/bin"
+              cp "$b" "engines/$e/bin/adapter-$e"
+              chmod +x "engines/$e/bin/adapter-$e"
+              if [ -n "$j" ]; then cp "$j" "engines/$e/ENGINE.json"; fi
+              ok=true
+            fi
+          fi
+          printf '{"engine":"%s","core_bakeoff_run":"%s","binary_found":%s}\n' "$e" "${id:-}" "$ok" > "results/provenance-$e.json"
+          cat "results/provenance-$e.json"
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+      - name: Runtime deps
+        if: steps.have.outputs.ok == 'true'
+        run: bash harness/ci_runtime_deps.sh ${{ matrix.engine }}
+      - name: Metrics vs Chrome
+        if: steps.have.outputs.ok == 'true'
+        run: |
+          python3 harness/print_oracle/engine_eval.py --engine ${{ matrix.engine }} --corpus corpus \
+            --out results/print-oracle-${{ matrix.engine }}.json --worst-dir results/worst-${{ matrix.engine }} --work /tmp/print-oracle
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: print-oracle-${{ matrix.engine }}
+          path: results/
+          if-no-files-found: warn
+
+  report:
+    needs: [corpus, engine]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: po-meta
+          path: meta
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: print-oracle-*
+          path: all
+      - name: Summary
+        run: |
+          mkdir -p meta all
+          python3 harness/print_oracle/report.py --results all --corpus meta --out-md summary.md --out-json summary.json
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: print-oracle-summary
+          path: |
+            summary.md
+            summary.json
+          if-no-files-found: warn
